@@ -114,11 +114,18 @@ export interface AddTradeIdeaArgs {
 }
 
 export interface DataService {
+	// composite queries — frontend uses these
 	list_clients: ActorMethod<[], Client[]>;
 	get_client: ActorMethod<[bigint], DataResultClient>;
 	get_portfolio: ActorMethod<[bigint], DataResultPortfolio>;
 	list_meetings: ActorMethod<[bigint], DataResultMeetings>;
 	list_trade_ideas: ActorMethod<[bigint], DataResultTradeIdeas>;
+	// `_for(end_user)` — ai_assistant uses these (frontend doesn't)
+	list_clients_for: ActorMethod<[Principal], Client[]>;
+	get_client_for: ActorMethod<[Principal, bigint], DataResultClient>;
+	get_portfolio_for: ActorMethod<[Principal, bigint], DataResultPortfolio>;
+	list_meetings_for: ActorMethod<[Principal, bigint], DataResultMeetings>;
+	list_trade_ideas_for: ActorMethod<[Principal, bigint], DataResultTradeIdeas>;
 	config: ActorMethod<[], [[] | [Principal], [] | [Principal]]>;
 	set_identity_canister: ActorMethod<[Principal], DataResult>;
 	set_audit_canister: ActorMethod<[Principal], DataResult>;

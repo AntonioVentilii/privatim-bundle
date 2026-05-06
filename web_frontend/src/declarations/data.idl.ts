@@ -129,11 +129,26 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 	const ResultTradeIdeas = IDL.Variant({ Ok: IDL.Vec(TradeIdea), Err: DataError });
 
 	return IDL.Service({
-		list_clients: IDL.Func([], [IDL.Vec(Client)], ['query']),
-		get_client: IDL.Func([IDL.Nat64], [ResultClient], ['query']),
-		get_portfolio: IDL.Func([IDL.Nat64], [ResultPortfolio], ['query']),
-		list_meetings: IDL.Func([IDL.Nat64], [ResultMeetings], ['query']),
-		list_trade_ideas: IDL.Func([IDL.Nat64], [ResultTradeIdeas], ['query']),
+		// composite queries — frontend uses these
+		list_clients: IDL.Func([], [IDL.Vec(Client)], ['composite_query']),
+		get_client: IDL.Func([IDL.Nat64], [ResultClient], ['composite_query']),
+		get_portfolio: IDL.Func([IDL.Nat64], [ResultPortfolio], ['composite_query']),
+		list_meetings: IDL.Func([IDL.Nat64], [ResultMeetings], ['composite_query']),
+		list_trade_ideas: IDL.Func([IDL.Nat64], [ResultTradeIdeas], ['composite_query']),
+		// `_for(end_user)` — ai_assistant uses these (frontend doesn't)
+		list_clients_for: IDL.Func([IDL.Principal], [IDL.Vec(Client)], []),
+		get_client_for: IDL.Func([IDL.Principal, IDL.Nat64], [ResultClient], []),
+		get_portfolio_for: IDL.Func([IDL.Principal, IDL.Nat64], [ResultPortfolio], []),
+		list_meetings_for: IDL.Func(
+			[IDL.Principal, IDL.Nat64],
+			[ResultMeetings],
+			[]
+		),
+		list_trade_ideas_for: IDL.Func(
+			[IDL.Principal, IDL.Nat64],
+			[ResultTradeIdeas],
+			[]
+		),
 		config: IDL.Func(
 			[],
 			[IDL.Opt(IDL.Principal), IDL.Opt(IDL.Principal)],

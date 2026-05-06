@@ -333,7 +333,7 @@ fn unassign_client(advisor: Principal, client_id: u64) -> IdentityResult<()> {
 }
 
 /// Admit the ai_assistant canister so it can post audit entries on behalf
-/// of users via the audit canister. One-shot; idempotent overwrite.
+/// of users via the audit canister. Admin-only.
 #[update]
 fn admit_ai_assistant(ai: Principal) -> IdentityResult<()> {
     let p = assert_authenticated()?;
@@ -344,6 +344,27 @@ fn admit_ai_assistant(ai: Principal) -> IdentityResult<()> {
         }
         st.ai_assistant = Some(ai);
         push_event(&mut st, p, IdentityEventKind::AiAssistantAdmitted { ai });
+        Ok(())
+    })
+}
+
+/// Trust-on-first-use self-registration: the calling canister claims to
+/// be the AI assistant. Succeeds only if the slot is empty (so the first
+/// caller after a fresh deploy wins). Subsequent overrides require admin.
+///
+/// Lets the `ai_assistant` canister auto-introduce itself from its `init`
+/// (via `ic_cdk::futures::spawn`) so no human bootstrap step is needed
+/// to set up the data canister's `_for` endpoint authz.
+#[update]
+fn register_ai_assistant_self() -> IdentityResult<()> {
+    let p = caller();
+    STATE.with(|s| {
+        let mut st = s.borrow_mut();
+        if st.ai_assistant.is_some() {
+            return Err(IdentityError::AlreadyBootstrapped);
+        }
+        st.ai_assistant = Some(p);
+        push_event(&mut st, p, IdentityEventKind::AiAssistantAdmitted { ai: p });
         Ok(())
     })
 }

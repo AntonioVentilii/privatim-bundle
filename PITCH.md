@@ -459,39 +459,41 @@ refactor when shipping for real: move `audit.audit` (the hash-chained
 log) and `data.{clients, portfolios, meetings, trade_ideas}` to
 `StableBTreeMap` / `StableVec`. ~1 day of mechanical work.
 
-### 4. Authz at the data canister boundary is showcase-grade.
+### 4. Authz at the data canister boundary — two read paths.
 
-The data canister's read methods (`list_clients`, `get_client`, etc.)
-gate only on "caller is authenticated, not anonymous". Role-aware
-filtering (Compliance/Admin see all, Advisors see only assigned
-clients) lives in the **frontend**, which loads the user's roles +
-assigned-client list from `identity.whoami()` at sign-in.
+The data canister exposes its reads through **two parallel
+endpoint families**:
 
-Why we did this: the AI assistant's `ask` is an `update` (it writes
-to the audit chain), and updates cannot call composite queries on
-other canisters (IC0527 — `Composite query cannot be called in
-replicated mode`). So the data canister's reads can't be composite
-queries — they have to be regular queries that work in both contexts.
+- **Composite queries** (`list_clients`, `get_client`, etc.) — used
+  by the frontend. They issue inter-canister queries to the identity
+  canister to scope visibility before returning (Compliance/Admin
+  see all, Advisors see only assigned clients).
+- **Update-mode `_for(end_user)` endpoints** — used by the AI
+  assistant from inside its `ask` update. Same authz logic but the
+  end user's principal is passed explicitly as an argument, and
+  data verifies `caller == ai_assistant_canister` before trusting
+  the argument.
 
-The hole: a malicious authenticated user could bypass the frontend
-and call `data.list_clients` directly via `dfx`, seeing every client
-on the engine regardless of role.
+Why two paths: composite queries can be called as queries (frontend
+case) but **not from an update context** (IC0527 — "Composite query
+cannot be called in replicated mode"). The AI assistant's `ask` is
+an update because it writes audit entries, so it can't invoke
+composite queries on data. The `_for` endpoints exist for that
+exact lane.
 
-For a real bank deployment, the right pattern is **two read paths**:
-composite queries for the frontend (for proper canister-boundary
-authz) plus dedicated update-mode read endpoints gated on the
-ai_assistant canister principal (for AI calls, where the AI passes
-the end user's principal as an `on_behalf_of` argument and the data
-canister verifies caller=ai_assistant before trusting that arg). ~1
-day of work, plus an auto-discovery setter for the ai_assistant
-principal on data (since data doesn't depend on ai_assistant in the
-manifest, env-var injection doesn't cover it).
+The AI principal is auto-discovered: `ai_assistant.init` calls
+`identity.register_ai_assistant_self()` (TOFU — first canister to
+claim the slot wins) via `ic_cdk::futures::spawn`. The data canister
+then fetches that principal lazily from identity on first `_for`
+call and caches it. No human bootstrap step.
 
-For the showcase, the simpler pattern + a "frontend enforces role
-filtering" pitch concession is acceptable. The audit chain is
-unaffected — every read is still subject to the
-`record_client_access` audit entry, so the chain still records who
-saw what when, even if the canister boundary itself is permissive.
+This closes the showcase-grade authz hole that existed when
+`data.list_clients` was a single regular query: a malicious
+authenticated user calling `data.list_clients` directly via `dfx`
+now hits the composite query, which routes through identity and
+filters their result set the same way the frontend would. The AI
+path is gated on canister identity, not role, so an attacker
+can't impersonate the AI to forge `end_user`.
 
 ### 5. Inter-canister composite-query latency is not cached.
 

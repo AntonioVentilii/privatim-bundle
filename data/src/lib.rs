@@ -220,6 +220,10 @@ struct State {
 
     identity_canister: Option<Principal>,
     audit_canister: Option<Principal>,
+    /// Lazily fetched principal of the ai_assistant canister, used to
+    /// gate the `_for(end_user)` update endpoints. Populated on first
+    /// call from `identity.ai_assistant_principal()`.
+    ai_assistant_canister: Option<Principal>,
 }
 
 thread_local! {
@@ -310,6 +314,94 @@ async fn can_view_client(p: Principal, client_id: u64) -> DataResult<bool> {
         return Ok(false);
     }
     is_assigned(p, client_id).await
+}
+
+// ───────────────────── ai_assistant gate ─────────────────────
+//
+// `_for(end_user)` endpoints are callable only by the ai_assistant
+// canister. Its principal is fetched lazily from the identity canister
+// on first hit, then cached. Identity gets the AI principal from
+// `ai_assistant.init` calling `register_ai_assistant_self()` via spawn —
+// auto-wiring on Cloud Engines installs without any human bootstrap step.
+
+async fn fetch_ai_principal_from_identity() -> Option<Principal> {
+    let identity = STATE.with(|s| s.borrow().identity_canister)?;
+    let res: Result<(Option<Principal>,), _> =
+        ic_cdk::api::call::call(identity, "ai_assistant_principal", ()).await;
+    res.ok().and_then(|(p,)| p)
+}
+
+async fn ai_principal() -> Option<Principal> {
+    let cached = STATE.with(|s| s.borrow().ai_assistant_canister);
+    if cached.is_some() {
+        return cached;
+    }
+    if let Some(p) = fetch_ai_principal_from_identity().await {
+        STATE.with(|s| s.borrow_mut().ai_assistant_canister = Some(p));
+        return Some(p);
+    }
+    None
+}
+
+async fn assert_ai_caller() -> DataResult<()> {
+    let p = caller();
+    if ic_cdk::api::is_controller(&p) {
+        return Ok(()); // Controllers can call _for endpoints too (for ops/test)
+    }
+    let ai = ai_principal().await;
+    if Some(p) != ai {
+        return Err(DataError::Unauthorized);
+    }
+    Ok(())
+}
+
+// Composite-query versions of the role-check helpers. Callable from
+// composite_query context (i.e. from `list_clients`, `get_client`, etc.
+// when those are themselves composite queries).
+
+async fn has_role_q(user: Principal, role: Role) -> bool {
+    if ic_cdk::api::is_controller(&user) {
+        return true;
+    }
+    let identity = match STATE.with(|s| s.borrow().identity_canister) {
+        Some(p) => p,
+        None => return false,
+    };
+    let res: Result<(bool,), _> =
+        ic_cdk::api::call::call(identity, "has_role", (user, role)).await;
+    res.map(|r| r.0).unwrap_or(false)
+}
+
+async fn assigned_clients_q(user: Principal) -> Vec<u64> {
+    let identity = match STATE.with(|s| s.borrow().identity_canister) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let res: Result<(Vec<u64>,), _> =
+        ic_cdk::api::call::call(identity, "assigned_clients", (user,)).await;
+    res.map(|r| r.0).unwrap_or_default()
+}
+
+async fn can_view_client_q(user: Principal, client_id: u64) -> bool {
+    if ic_cdk::api::is_controller(&user) {
+        return true;
+    }
+    if has_role_q(user, Role::Compliance).await {
+        return true;
+    }
+    if has_role_q(user, Role::Admin).await {
+        return true;
+    }
+    if !has_role_q(user, Role::Advisor).await {
+        return false;
+    }
+    let identity = match STATE.with(|s| s.borrow().identity_canister) {
+        Some(p) => p,
+        None => return false,
+    };
+    let res: Result<(bool,), _> =
+        ic_cdk::api::call::call(identity, "is_assigned", (user, client_id)).await;
+    res.map(|r| r.0).unwrap_or(false)
 }
 
 fn validate_short(s: &str, name: &str) -> DataResult<()> {
@@ -1080,55 +1172,96 @@ fn reset_demo() -> DataResult<u64> {
 
 // ───────────────────── public reads ─────────────────────
 //
-// These are regular `query` methods (not composite queries) so that
-// `ai_assistant.ask` (an update) can call them via standard inter-canister
-// calls — composite queries cannot be invoked from an update context
-// (IC0527). The trade-off is that authz at the data canister boundary is
-// reduced to "caller is authenticated"; role-aware filtering moves to the
-// frontend (which loads `identity.whoami()` at sign-in and filters
-// client lists locally based on the user's roles + assigned_clients).
+// Two-read-paths pattern, addressing the showcase-grade authz hole that
+// existed when `data.list_clients` was a regular query (any authenticated
+// caller could read every client). Now:
 //
-// This is a deliberate showcase-grade simplification — for a real bank,
-// the right pattern is composite-query reads for the frontend plus
-// dedicated update-mode read endpoints gated on the ai_assistant canister
-// principal for AI calls. See PITCH.md Engineering Notes.
+// 1. **Composite queries** (called by the frontend directly): the public
+//    `list_clients` / `get_client` / `get_portfolio` / `list_meetings` /
+//    `list_trade_ideas`. These do server-side authz via inter-canister
+//    queries to the identity canister. ~50–200ms per hop on local replica.
+//
+// 2. **Update-mode `_for(end_user)` endpoints** (called by `ai_assistant`
+//    from inside its `ask` update): same authz, but gated on `caller ==
+//    ai_assistant_canister` so a malicious authenticated user can't
+//    forge `end_user` to steal data. The AI's own principal is fetched
+//    from the identity canister on first hit and cached.
 
-fn auth_check() -> DataResult<()> {
-    if caller() == Principal::anonymous() {
+fn anon_or_unauth(caller_p: Principal) -> Vec<Client> {
+    let _ = caller_p;
+    Vec::new()
+}
+
+fn list_clients_visible_to(state: &State, user: Principal, see_all: bool, assigned: &[u64]) -> Vec<Client> {
+    if see_all {
+        state.clients.values().cloned().collect()
+    } else {
+        let _ = user;
+        assigned
+            .iter()
+            .filter_map(|id| state.clients.get(id).cloned())
+            .collect()
+    }
+}
+
+async fn list_clients_for_user(user: Principal) -> Vec<Client> {
+    if user == Principal::anonymous() {
+        return anon_or_unauth(user);
+    }
+    let see_all = ic_cdk::api::is_controller(&user)
+        || has_role_q(user, Role::Compliance).await
+        || has_role_q(user, Role::Admin).await;
+    let assigned: Vec<u64> = if see_all {
+        Vec::new()
+    } else {
+        assigned_clients_q(user).await
+    };
+    STATE.with(|s| list_clients_visible_to(&s.borrow(), user, see_all, &assigned))
+}
+
+// — composite queries (frontend) —
+
+#[query(composite = true)]
+async fn list_clients() -> Vec<Client> {
+    list_clients_for_user(caller()).await
+}
+
+#[query(composite = true)]
+async fn get_client(id: u64) -> DataResult<Client> {
+    let p = caller();
+    if p == Principal::anonymous() {
         return Err(DataError::Unauthorized);
     }
-    Ok(())
-}
-
-#[query]
-fn list_clients() -> Vec<Client> {
-    if auth_check().is_err() {
-        return Vec::new();
+    if !can_view_client_q(p, id).await {
+        return Err(DataError::Unauthorized);
     }
-    STATE.with(|s| s.borrow().clients.values().cloned().collect())
-}
-
-#[query]
-fn get_client(id: u64) -> DataResult<Client> {
-    auth_check()?;
     STATE.with(|s| s.borrow().clients.get(&id).cloned().ok_or(DataError::NotFound))
 }
 
-#[query]
-fn get_portfolio(id: u64) -> DataResult<Portfolio> {
-    auth_check()?;
-    STATE.with(|s| {
-        s.borrow()
-            .portfolios
-            .get(&id)
-            .cloned()
-            .ok_or(DataError::NotFound)
-    })
+#[query(composite = true)]
+async fn get_portfolio(id: u64) -> DataResult<Portfolio> {
+    let p = caller();
+    if p == Principal::anonymous() {
+        return Err(DataError::Unauthorized);
+    }
+    let port = STATE
+        .with(|s| s.borrow().portfolios.get(&id).cloned())
+        .ok_or(DataError::NotFound)?;
+    if !can_view_client_q(p, port.client_id).await {
+        return Err(DataError::Unauthorized);
+    }
+    Ok(port)
 }
 
-#[query]
-fn list_meetings(client_id: u64) -> DataResult<Vec<Meeting>> {
-    auth_check()?;
+#[query(composite = true)]
+async fn list_meetings(client_id: u64) -> DataResult<Vec<Meeting>> {
+    let p = caller();
+    if p == Principal::anonymous() {
+        return Err(DataError::Unauthorized);
+    }
+    if !can_view_client_q(p, client_id).await {
+        return Err(DataError::Unauthorized);
+    }
     Ok(STATE.with(|s| {
         let st = s.borrow();
         let mut out: Vec<Meeting> = st
@@ -1142,9 +1275,99 @@ fn list_meetings(client_id: u64) -> DataResult<Vec<Meeting>> {
     }))
 }
 
-#[query]
-fn list_trade_ideas(client_id: u64) -> DataResult<Vec<TradeIdea>> {
-    auth_check()?;
+#[query(composite = true)]
+async fn list_trade_ideas(client_id: u64) -> DataResult<Vec<TradeIdea>> {
+    let p = caller();
+    if p == Principal::anonymous() {
+        return Err(DataError::Unauthorized);
+    }
+    if !can_view_client_q(p, client_id).await {
+        return Err(DataError::Unauthorized);
+    }
+    Ok(STATE.with(|s| {
+        let st = s.borrow();
+        let mut out: Vec<TradeIdea> = st
+            .trade_ideas
+            .values()
+            .filter(|t| t.client_id == client_id)
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| b.proposed_at_ns.cmp(&a.proposed_at_ns));
+        out
+    }))
+}
+
+// — update-mode `_for(end_user)` (ai_assistant) —
+
+#[update]
+async fn list_clients_for(end_user: Principal) -> Vec<Client> {
+    if assert_ai_caller().await.is_err() {
+        return Vec::new();
+    }
+    list_clients_for_user(end_user).await
+}
+
+#[update]
+async fn get_client_for(end_user: Principal, id: u64) -> DataResult<Client> {
+    assert_ai_caller().await?;
+    if end_user == Principal::anonymous() {
+        return Err(DataError::Unauthorized);
+    }
+    if !can_view_client_q(end_user, id).await {
+        return Err(DataError::Unauthorized);
+    }
+    STATE.with(|s| s.borrow().clients.get(&id).cloned().ok_or(DataError::NotFound))
+}
+
+#[update]
+async fn get_portfolio_for(end_user: Principal, id: u64) -> DataResult<Portfolio> {
+    assert_ai_caller().await?;
+    if end_user == Principal::anonymous() {
+        return Err(DataError::Unauthorized);
+    }
+    let port = STATE
+        .with(|s| s.borrow().portfolios.get(&id).cloned())
+        .ok_or(DataError::NotFound)?;
+    if !can_view_client_q(end_user, port.client_id).await {
+        return Err(DataError::Unauthorized);
+    }
+    Ok(port)
+}
+
+#[update]
+async fn list_meetings_for(end_user: Principal, client_id: u64) -> DataResult<Vec<Meeting>> {
+    assert_ai_caller().await?;
+    if end_user == Principal::anonymous() {
+        return Err(DataError::Unauthorized);
+    }
+    if !can_view_client_q(end_user, client_id).await {
+        return Err(DataError::Unauthorized);
+    }
+    Ok(STATE.with(|s| {
+        let st = s.borrow();
+        let mut out: Vec<Meeting> = st
+            .meetings
+            .values()
+            .filter(|m| m.client_id == client_id)
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| b.occurred_at_ns.cmp(&a.occurred_at_ns));
+        out
+    }))
+}
+
+#[update]
+async fn list_trade_ideas_for(
+    end_user: Principal,
+    client_id: u64,
+) -> DataResult<Vec<TradeIdea>> {
+    assert_ai_caller().await?;
+    if end_user == Principal::anonymous() {
+        return Err(DataError::Unauthorized);
+    }
+    if !can_view_client_q(end_user, client_id).await {
+        return Err(DataError::Unauthorized);
+    }
     Ok(STATE.with(|s| {
         let st = s.borrow();
         let mut out: Vec<TradeIdea> = st

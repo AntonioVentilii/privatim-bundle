@@ -39,4 +39,5 @@ service : () -> {
   assign_client : (principal, nat64) -> (variant { Ok; Err : IdentityError });
   unassign_client : (principal, nat64) -> (variant { Ok; Err : IdentityError });
   admit_ai_assistant : (principal) -> (variant { Ok; Err : IdentityError });
+  register_ai_assistant_self : () -> (variant { Ok; Err : IdentityError });
 }

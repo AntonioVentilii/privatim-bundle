@@ -214,8 +214,10 @@ pub enum AuditError {
 
 #[derive(Default, CandidType, Serialize, Deserialize)]
 struct State {
+    identity_canister: Option<Principal>,
     data_canister: Option<Principal>,
     audit_canister: Option<Principal>,
+    registered_with_identity: bool,
 }
 
 thread_local! {
@@ -247,6 +249,9 @@ fn read_principal_env(name: &str) -> Option<Principal> {
 fn init() {
     STATE.with(|s| {
         let mut st = s.borrow_mut();
+        if let Some(p) = read_principal_env("PUBLIC_CANISTER_ID:identity") {
+            st.identity_canister = Some(p);
+        }
         if let Some(p) = read_principal_env("PUBLIC_CANISTER_ID:data") {
             st.data_canister = Some(p);
         }
@@ -254,6 +259,9 @@ fn init() {
             st.audit_canister = Some(p);
         }
     });
+    // Self-registration with identity happens lazily on the first `ask`
+    // (init can't do inter-canister calls — IC0504). See
+    // `ensure_registered_with_identity`.
 }
 
 #[pre_upgrade]
@@ -314,23 +322,55 @@ fn config() -> (Option<Principal>, Option<Principal>) {
 
 const MODEL_TAG: &str = "stub-v1";
 
+/// Self-registers this canister's principal with the identity canister
+/// on first authenticated call. Idempotent: subsequent runs after the
+/// first success are no-ops. Required because `init` can't make
+/// inter-canister calls (IC0504), so we defer the registration to the
+/// first user-driven update.
+async fn ensure_registered_with_identity() {
+    let already = STATE.with(|s| s.borrow().registered_with_identity);
+    if already {
+        return;
+    }
+    let identity = STATE.with(|s| s.borrow().identity_canister);
+    if let Some(identity) = identity {
+        let res: Result<(Result<(), candid::Reserved>,), _> =
+            ic_cdk::api::call::call(identity, "register_ai_assistant_self", ()).await;
+        // Mark registered on success OR on AlreadyBootstrapped (the slot
+        // is filled, possibly by an earlier run, possibly by a manual
+        // admit). Either way, `data._for` will accept us.
+        if res.is_ok() {
+            STATE.with(|s| s.borrow_mut().registered_with_identity = true);
+        }
+    }
+}
+
 #[update]
 async fn ask(req: AssistantRequest) -> AssistantResult<AssistantResponse> {
     let user = caller();
     if user == Principal::anonymous() {
         return Err(AssistantError::Unauthorized);
     }
+    ensure_registered_with_identity().await;
     let data = get_data()?;
     let audit = get_audit()?;
 
     let (answer, citations) = match req.intent {
-        AssistantIntent::PortfolioOverview => handle_portfolio_overview(data, req.client_id).await?,
-        AssistantIntent::RiskAssessment => handle_risk_assessment(data, req.client_id).await?,
-        AssistantIntent::KycStatus => handle_kyc_status(data, req.client_id).await?,
-        AssistantIntent::MeetingDigest => handle_meeting_digest(data, req.client_id).await?,
-        AssistantIntent::OpenTradeIdeas => handle_open_trade_ideas(data, req.client_id).await?,
-        AssistantIntent::FxExposureBook => handle_fx_exposure_book(data).await?,
-        AssistantIntent::KycActionList => handle_kyc_action_list(data).await?,
+        AssistantIntent::PortfolioOverview => {
+            handle_portfolio_overview(data, user, req.client_id).await?
+        }
+        AssistantIntent::RiskAssessment => {
+            handle_risk_assessment(data, user, req.client_id).await?
+        }
+        AssistantIntent::KycStatus => handle_kyc_status(data, user, req.client_id).await?,
+        AssistantIntent::MeetingDigest => {
+            handle_meeting_digest(data, user, req.client_id).await?
+        }
+        AssistantIntent::OpenTradeIdeas => {
+            handle_open_trade_ideas(data, user, req.client_id).await?
+        }
+        AssistantIntent::FxExposureBook => handle_fx_exposure_book(data, user).await?,
+        AssistantIntent::KycActionList => handle_kyc_action_list(data, user).await?,
     };
 
     let intent_label = intent_label(&req.intent);
@@ -384,10 +424,23 @@ fn require_client_id(client_id: Option<u64>) -> AssistantResult<u64> {
 
 // ───────────────────── inter-canister helpers ─────────────────────
 
-async fn fetch_client(data: Principal, id: u64) -> AssistantResult<Client> {
-    let res: (DataResult<Client>,) = ic_cdk::api::call::call(data, "get_client", (id,))
-        .await
-        .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
+// All data reads from ai_assistant go through dedicated `_for(end_user)`
+// update endpoints on `data`. The `end_user` is the principal that called
+// `ai_assistant.ask` — data verifies caller=this_canister (via the
+// principal it knows from `identity`), then performs authz against
+// `end_user` exactly as the composite-query path would for a direct
+// frontend call. This closes the authz hole that would otherwise exist
+// if data exposed plain regular-query reads to all authenticated callers.
+
+async fn fetch_client(
+    data: Principal,
+    end_user: Principal,
+    id: u64,
+) -> AssistantResult<Client> {
+    let res: (DataResult<Client>,) =
+        ic_cdk::api::call::call(data, "get_client_for", (end_user, id))
+            .await
+            .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     match res.0 {
         Ok(c) => Ok(c),
         Err(DataError::NotFound) => Err(AssistantError::NotFound),
@@ -395,10 +448,15 @@ async fn fetch_client(data: Principal, id: u64) -> AssistantResult<Client> {
     }
 }
 
-async fn fetch_portfolio(data: Principal, id: u64) -> AssistantResult<Portfolio> {
-    let res: (DataResult<Portfolio>,) = ic_cdk::api::call::call(data, "get_portfolio", (id,))
-        .await
-        .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
+async fn fetch_portfolio(
+    data: Principal,
+    end_user: Principal,
+    id: u64,
+) -> AssistantResult<Portfolio> {
+    let res: (DataResult<Portfolio>,) =
+        ic_cdk::api::call::call(data, "get_portfolio_for", (end_user, id))
+            .await
+            .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     match res.0 {
         Ok(p) => Ok(p),
         Err(DataError::NotFound) => Err(AssistantError::NotFound),
@@ -406,26 +464,38 @@ async fn fetch_portfolio(data: Principal, id: u64) -> AssistantResult<Portfolio>
     }
 }
 
-async fn fetch_meetings(data: Principal, client_id: u64) -> AssistantResult<Vec<Meeting>> {
+async fn fetch_meetings(
+    data: Principal,
+    end_user: Principal,
+    client_id: u64,
+) -> AssistantResult<Vec<Meeting>> {
     let res: (DataResult<Vec<Meeting>>,) =
-        ic_cdk::api::call::call(data, "list_meetings", (client_id,))
+        ic_cdk::api::call::call(data, "list_meetings_for", (end_user, client_id))
             .await
             .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     res.0.map_err(|_| AssistantError::Unauthorized)
 }
 
-async fn fetch_trade_ideas(data: Principal, client_id: u64) -> AssistantResult<Vec<TradeIdea>> {
+async fn fetch_trade_ideas(
+    data: Principal,
+    end_user: Principal,
+    client_id: u64,
+) -> AssistantResult<Vec<TradeIdea>> {
     let res: (DataResult<Vec<TradeIdea>>,) =
-        ic_cdk::api::call::call(data, "list_trade_ideas", (client_id,))
+        ic_cdk::api::call::call(data, "list_trade_ideas_for", (end_user, client_id))
             .await
             .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     res.0.map_err(|_| AssistantError::Unauthorized)
 }
 
-async fn list_clients(data: Principal) -> AssistantResult<Vec<Client>> {
-    let res: (Vec<Client>,) = ic_cdk::api::call::call(data, "list_clients", ())
-        .await
-        .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
+async fn list_clients(
+    data: Principal,
+    end_user: Principal,
+) -> AssistantResult<Vec<Client>> {
+    let res: (Vec<Client>,) =
+        ic_cdk::api::call::call(data, "list_clients_for", (end_user,))
+            .await
+            .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     Ok(res.0)
 }
 
@@ -454,10 +524,11 @@ async fn record_audit(
 
 async fn handle_portfolio_overview(
     data: Principal,
+    end_user: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(data, cid).await?;
+    let client = fetch_client(data, end_user, cid).await?;
     let mut citations = vec![AssistantCitation {
         kind: CitationKind::Client,
         id: client.id,
@@ -466,7 +537,7 @@ async fn handle_portfolio_overview(
     let mut total_value_chf: u128 = 0;
     let mut lines = Vec::new();
     for pid in &client.portfolio_ids {
-        let p = fetch_portfolio(data, *pid).await?;
+        let p = fetch_portfolio(data, end_user, *pid).await?;
         let positions_value: u128 = p
             .positions
             .iter()
@@ -503,10 +574,11 @@ async fn handle_portfolio_overview(
 
 async fn handle_risk_assessment(
     data: Principal,
+    end_user: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(data, cid).await?;
+    let client = fetch_client(data, end_user, cid).await?;
     let mut citations = vec![AssistantCitation {
         kind: CitationKind::Client,
         id: client.id,
@@ -515,7 +587,7 @@ async fn handle_risk_assessment(
     let mut by_class: std::collections::BTreeMap<String, u128> = Default::default();
     let mut total: u128 = 0;
     for pid in &client.portfolio_ids {
-        let p = fetch_portfolio(data, *pid).await?;
+        let p = fetch_portfolio(data, end_user, *pid).await?;
         for pos in &p.positions {
             let v = (pos.quantity as u128).saturating_mul(pos.current_price_chf_cents as u128);
             total = total.saturating_add(v);
@@ -569,10 +641,11 @@ async fn handle_risk_assessment(
 
 async fn handle_kyc_status(
     data: Principal,
+    end_user: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(data, cid).await?;
+    let client = fetch_client(data, end_user, cid).await?;
     let citations = vec![AssistantCitation {
         kind: CitationKind::Client,
         id: client.id,
@@ -594,11 +667,12 @@ async fn handle_kyc_status(
 
 async fn handle_meeting_digest(
     data: Principal,
+    end_user: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(data, cid).await?;
-    let meetings = fetch_meetings(data, cid).await?;
+    let client = fetch_client(data, end_user, cid).await?;
+    let meetings = fetch_meetings(data, end_user, cid).await?;
     let mut citations = vec![AssistantCitation {
         kind: CitationKind::Client,
         id: client.id,
@@ -636,11 +710,12 @@ async fn handle_meeting_digest(
 
 async fn handle_open_trade_ideas(
     data: Principal,
+    end_user: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(data, cid).await?;
-    let ideas = fetch_trade_ideas(data, cid).await?;
+    let client = fetch_client(data, end_user, cid).await?;
+    let ideas = fetch_trade_ideas(data, end_user, cid).await?;
     let open: Vec<&TradeIdea> = ideas
         .iter()
         .filter(|i| matches!(i.status, TradeIdeaStatus::Draft | TradeIdeaStatus::Approved))
@@ -680,13 +755,14 @@ async fn handle_open_trade_ideas(
 
 async fn handle_fx_exposure_book(
     data: Principal,
+    end_user: Principal,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
-    let clients = list_clients(data).await?;
+    let clients = list_clients(data, end_user).await?;
     let mut citations = Vec::new();
     let mut by_currency: std::collections::BTreeMap<String, u128> = Default::default();
     for c in &clients {
         for pid in &c.portfolio_ids {
-            if let Ok(p) = fetch_portfolio(data, *pid).await {
+            if let Ok(p) = fetch_portfolio(data, end_user, *pid).await {
                 let value: u128 = p
                     .positions
                     .iter()
@@ -719,8 +795,9 @@ async fn handle_fx_exposure_book(
 
 async fn handle_kyc_action_list(
     data: Principal,
+    end_user: Principal,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
-    let clients = list_clients(data).await?;
+    let clients = list_clients(data, end_user).await?;
     let mut citations = Vec::new();
     let mut lines = Vec::new();
     for c in &clients {

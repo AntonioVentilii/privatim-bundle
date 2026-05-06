@@ -99,11 +99,23 @@ type AddTradeIdeaArgs = record {
 };
 
 service : () -> {
-  list_clients : () -> (vec Client) query;
-  get_client : (nat64) -> (variant { Ok : Client; Err : DataError }) query;
-  get_portfolio : (nat64) -> (variant { Ok : Portfolio; Err : DataError }) query;
-  list_meetings : (nat64) -> (variant { Ok : vec Meeting; Err : DataError }) query;
-  list_trade_ideas : (nat64) -> (variant { Ok : vec TradeIdea; Err : DataError }) query;
+  // Frontend reads — composite queries that do server-side authz via
+  // identity. Filter clients to what the caller is authorised to see.
+  list_clients : () -> (vec Client) composite_query;
+  get_client : (nat64) -> (variant { Ok : Client; Err : DataError }) composite_query;
+  get_portfolio : (nat64) -> (variant { Ok : Portfolio; Err : DataError }) composite_query;
+  list_meetings : (nat64) -> (variant { Ok : vec Meeting; Err : DataError }) composite_query;
+  list_trade_ideas : (nat64) -> (variant { Ok : vec TradeIdea; Err : DataError }) composite_query;
+
+  // ai_assistant reads — update-mode endpoints that take the end user
+  // as an explicit argument. Caller must be the registered ai_assistant
+  // canister principal (looked up lazily from the identity canister
+  // and cached after the first hit).
+  list_clients_for : (principal) -> (vec Client);
+  get_client_for : (principal, nat64) -> (variant { Ok : Client; Err : DataError });
+  get_portfolio_for : (principal, nat64) -> (variant { Ok : Portfolio; Err : DataError });
+  list_meetings_for : (principal, nat64) -> (variant { Ok : vec Meeting; Err : DataError });
+  list_trade_ideas_for : (principal, nat64) -> (variant { Ok : vec TradeIdea; Err : DataError });
 
   config : () -> (opt principal, opt principal) query;
 

@@ -32,10 +32,6 @@
 		loading = true;
 		errMsg = null;
 		try {
-			if (!auth.canSeeClient(clientId)) {
-				errMsg = 'Not authorised to view this client.';
-				return;
-			}
 			const c = await b.data.get_client(clientId);
 			if ('Err' in c) {
 				errMsg = appErrorMessage(c.Err);
