@@ -34,15 +34,18 @@ The pitch is in [`PITCH.md`](./PITCH.md). The packaging walkthrough is in
 
 ```
 .
-├── README.md                  # this file (dev workflow + overview)
-├── PACKAGING.md               # how to ship the .icp bundle to a Cloud Engine
+├── README.md                  # dev workflow + overview (you are here)
 ├── PITCH.md                   # external pitch + internal engineering notes
-├── icp.yaml                   # icp-cli project file
+├── PITCH_BULLET_POINTS.md     # speaker-notes companion to PITCH.md
+├── PACKAGING.md               # how to ship the .icp bundle to a Cloud Engine
+├── icp.yaml                   # icp-cli project file (5 canisters)
 ├── farm.manifest.json         # for testnet farm + Cloud Engines (II = s24we-…)
 ├── local.manifest.json        # for a local icp-cli network
 ├── icons/                     # one SVG per canister + app.svg
-├── app_backend/               # Rust canister (clients, portfolios, audit, roles)
-├── ai_assistant/              # Rust canister (stub LLM today, real LLM v2)
+├── identity/                  # Rust canister: roles, advisor↔client assignments
+├── audit/                     # Rust canister: hash-chained log + signed export
+├── data/                      # Rust canister: clients, portfolios, meetings, trade ideas
+├── ai_assistant/              # Rust canister: stub LLM today, real LLM v2
 └── web_frontend/              # SvelteKit + Tailwind, adapter-static
 ```
 

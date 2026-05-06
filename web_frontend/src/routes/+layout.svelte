@@ -39,6 +39,12 @@
 			label: 'Roles',
 			match: (p: string) => p.startsWith('/admin/roles'),
 			requires: 'Admin' as const
+		},
+		{
+			href: '/admin/bootstrap',
+			label: 'Bootstrap',
+			match: (p: string) => p.startsWith('/admin/bootstrap'),
+			requires: 'Admin' as const
 		}
 	];
 
