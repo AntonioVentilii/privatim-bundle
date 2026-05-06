@@ -13,7 +13,14 @@
 		if (!b) return;
 		loading = true;
 		try {
-			[clients, head] = await Promise.all([b.data.list_clients(), b.audit.audit_head()]);
+			const [allClients, h] = await Promise.all([
+				b.data.list_clients(),
+				b.audit.audit_head()
+			]);
+			clients = auth.canSeeAllClients()
+				? allClients
+				: allClients.filter((c) => auth.canSeeClient(c.id));
+			head = h;
 		} finally {
 			loading = false;
 		}

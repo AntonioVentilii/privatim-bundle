@@ -15,6 +15,7 @@ export interface AuthState {
 	principal: Principal | null;
 	backends: Backends | null;
 	roles: Role[];
+	assignedClients: bigint[];
 }
 
 function createAuth() {
@@ -24,7 +25,8 @@ function createAuth() {
 		identity: null,
 		principal: null,
 		backends: null,
-		roles: []
+		roles: [],
+		assignedClients: []
 	});
 
 	let client: AuthClient | null = null;
@@ -33,8 +35,10 @@ function createAuth() {
 		try {
 			const me = await b.identity.whoami();
 			state.roles = me.roles;
+			state.assignedClients = me.assigned_clients;
 		} catch {
 			state.roles = [];
+			state.assignedClients = [];
 		}
 	}
 
@@ -68,6 +72,7 @@ function createAuth() {
 			state.principal = null;
 			state.authenticated = false;
 			state.roles = [];
+			state.assignedClients = [];
 		}
 		state.ready = true;
 	}
@@ -95,10 +100,20 @@ function createAuth() {
 		state.authenticated = false;
 		state.backends = backends;
 		state.roles = [];
+		state.assignedClients = [];
 	}
 
 	function hasRole(r: 'Advisor' | 'Compliance' | 'Admin'): boolean {
 		return state.roles.some((role) => r in role);
+	}
+
+	function canSeeAllClients(): boolean {
+		return hasRole('Compliance') || hasRole('Admin');
+	}
+
+	function canSeeClient(clientId: bigint): boolean {
+		if (canSeeAllClients()) return true;
+		return state.assignedClients.includes(clientId);
 	}
 
 	return {
@@ -108,7 +123,9 @@ function createAuth() {
 		init,
 		login,
 		logout,
-		hasRole
+		hasRole,
+		canSeeAllClients,
+		canSeeClient
 	};
 }
 

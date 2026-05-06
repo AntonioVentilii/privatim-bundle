@@ -99,11 +99,11 @@ type AddTradeIdeaArgs = record {
 };
 
 service : () -> {
-  list_clients : () -> (vec Client) composite_query;
-  get_client : (nat64) -> (variant { Ok : Client; Err : DataError }) composite_query;
-  get_portfolio : (nat64) -> (variant { Ok : Portfolio; Err : DataError }) composite_query;
-  list_meetings : (nat64) -> (variant { Ok : vec Meeting; Err : DataError }) composite_query;
-  list_trade_ideas : (nat64) -> (variant { Ok : vec TradeIdea; Err : DataError }) composite_query;
+  list_clients : () -> (vec Client) query;
+  get_client : (nat64) -> (variant { Ok : Client; Err : DataError }) query;
+  get_portfolio : (nat64) -> (variant { Ok : Portfolio; Err : DataError }) query;
+  list_meetings : (nat64) -> (variant { Ok : vec Meeting; Err : DataError }) query;
+  list_trade_ideas : (nat64) -> (variant { Ok : vec TradeIdea; Err : DataError }) query;
 
   config : () -> (opt principal, opt principal) query;
 

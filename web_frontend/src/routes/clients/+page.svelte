@@ -12,7 +12,13 @@
 		if (!b) return;
 		loading = true;
 		try {
-			clients = await b.data.list_clients();
+			const all = await b.data.list_clients();
+			// Role-aware filtering: Compliance/Admin see all; Advisors see only
+			// clients assigned to them. Authz at the data canister boundary is
+			// "any authenticated caller" — see PITCH.md Engineering Notes.
+			clients = auth.canSeeAllClients()
+				? all
+				: all.filter((c) => auth.canSeeClient(c.id));
 			clients.sort((a, b) => Number(b.aum_chf - a.aum_chf));
 		} finally {
 			loading = false;

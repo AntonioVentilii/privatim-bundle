@@ -459,7 +459,41 @@ refactor when shipping for real: move `audit.audit` (the hash-chained
 log) and `data.{clients, portfolios, meetings, trade_ideas}` to
 `StableBTreeMap` / `StableVec`. ~1 day of mechanical work.
 
-### 4. Inter-canister composite-query latency is not cached.
+### 4. Authz at the data canister boundary is showcase-grade.
+
+The data canister's read methods (`list_clients`, `get_client`, etc.)
+gate only on "caller is authenticated, not anonymous". Role-aware
+filtering (Compliance/Admin see all, Advisors see only assigned
+clients) lives in the **frontend**, which loads the user's roles +
+assigned-client list from `identity.whoami()` at sign-in.
+
+Why we did this: the AI assistant's `ask` is an `update` (it writes
+to the audit chain), and updates cannot call composite queries on
+other canisters (IC0527 — `Composite query cannot be called in
+replicated mode`). So the data canister's reads can't be composite
+queries — they have to be regular queries that work in both contexts.
+
+The hole: a malicious authenticated user could bypass the frontend
+and call `data.list_clients` directly via `dfx`, seeing every client
+on the engine regardless of role.
+
+For a real bank deployment, the right pattern is **two read paths**:
+composite queries for the frontend (for proper canister-boundary
+authz) plus dedicated update-mode read endpoints gated on the
+ai_assistant canister principal (for AI calls, where the AI passes
+the end user's principal as an `on_behalf_of` argument and the data
+canister verifies caller=ai_assistant before trusting that arg). ~1
+day of work, plus an auto-discovery setter for the ai_assistant
+principal on data (since data doesn't depend on ai_assistant in the
+manifest, env-var injection doesn't cover it).
+
+For the showcase, the simpler pattern + a "frontend enforces role
+filtering" pitch concession is acceptable. The audit chain is
+unaffected — every read is still subject to the
+`record_client_access` audit entry, so the chain still records who
+saw what when, even if the canister boundary itself is permissive.
+
+### 5. Inter-canister composite-query latency is not cached.
 
 Every read on `data.list_clients` issues two inter-canister query calls
 to `identity` (`has_role(p, Compliance)` and `has_role(p, Admin)`).
@@ -474,7 +508,7 @@ TTL. Cache invalidation on role grant/revoke is "wait for TTL" —
 acceptable because role grants are rare and the staleness window is
 small. ~2 hours of work if/when it becomes the demo's bottleneck.
 
-### 5. Local-dev bootstrap is manual.
+### 6. Local-dev bootstrap is manual.
 
 Inter-canister wiring (telling `audit` who its writers are, telling
 `data` and `ai_assistant` where to find `identity` and `audit`) is real
@@ -491,7 +525,7 @@ add `ic_cdk::env_var_value("PUBLIC_CANISTER_ID:<dep>")` reads into
 each canister's `init` so the wiring is automatic on Cloud Engines _and_
 the page becomes a fallback only. ~half a day of work.
 
-### 6. Synthetic advisor principals + Admin-sees-all bootstrap.
+### 7. Synthetic advisor principals + Admin-sees-all bootstrap.
 
 Seeded clients are owned by 6 deterministic synthetic advisor principals
 that no human can sign in as. The first authenticated principal becomes

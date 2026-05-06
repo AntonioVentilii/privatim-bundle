@@ -1079,76 +1079,56 @@ fn reset_demo() -> DataResult<u64> {
 }
 
 // ───────────────────── public reads ─────────────────────
+//
+// These are regular `query` methods (not composite queries) so that
+// `ai_assistant.ask` (an update) can call them via standard inter-canister
+// calls — composite queries cannot be invoked from an update context
+// (IC0527). The trade-off is that authz at the data canister boundary is
+// reduced to "caller is authenticated"; role-aware filtering moves to the
+// frontend (which loads `identity.whoami()` at sign-in and filters
+// client lists locally based on the user's roles + assigned_clients).
+//
+// This is a deliberate showcase-grade simplification — for a real bank,
+// the right pattern is composite-query reads for the frontend plus
+// dedicated update-mode read endpoints gated on the ai_assistant canister
+// principal for AI calls. See PITCH.md Engineering Notes.
 
-#[query(composite = true)]
-async fn list_clients() -> Vec<Client> {
-    let p = caller();
-    let see_all = if ic_cdk::api::is_controller(&p) {
-        true
-    } else {
-        let identity_opt = STATE.with(|s| s.borrow().identity_canister);
-        match identity_opt {
-            Some(identity) => {
-                let compliance: Result<(bool,), _> =
-                    ic_cdk::api::call::call(identity, "has_role", (p, Role::Compliance)).await;
-                let admin: Result<(bool,), _> =
-                    ic_cdk::api::call::call(identity, "has_role", (p, Role::Admin)).await;
-                compliance.map(|r| r.0).unwrap_or(false)
-                    || admin.map(|r| r.0).unwrap_or(false)
-            }
-            None => false,
-        }
-    };
-    if see_all {
-        STATE.with(|s| s.borrow().clients.values().cloned().collect())
-    } else {
-        let identity_opt = STATE.with(|s| s.borrow().identity_canister);
-        let assigned: Vec<u64> = match identity_opt {
-            Some(identity) => {
-                ic_cdk::api::call::call::<_, (Vec<u64>,)>(identity, "assigned_clients", (p,))
-                    .await
-                    .map(|r| r.0)
-                    .unwrap_or_default()
-            }
-            None => Vec::new(),
-        };
-        STATE.with(|s| {
-            let st = s.borrow();
-            assigned
-                .into_iter()
-                .filter_map(|id| st.clients.get(&id).cloned())
-                .collect()
-        })
-    }
-}
-
-#[query(composite = true)]
-async fn get_client(id: u64) -> DataResult<Client> {
-    let p = caller();
-    if !can_view_client(p, id).await? {
+fn auth_check() -> DataResult<()> {
+    if caller() == Principal::anonymous() {
         return Err(DataError::Unauthorized);
     }
+    Ok(())
+}
+
+#[query]
+fn list_clients() -> Vec<Client> {
+    if auth_check().is_err() {
+        return Vec::new();
+    }
+    STATE.with(|s| s.borrow().clients.values().cloned().collect())
+}
+
+#[query]
+fn get_client(id: u64) -> DataResult<Client> {
+    auth_check()?;
     STATE.with(|s| s.borrow().clients.get(&id).cloned().ok_or(DataError::NotFound))
 }
 
-#[query(composite = true)]
-async fn get_portfolio(id: u64) -> DataResult<Portfolio> {
-    let p = caller();
-    let port = STATE
-        .with(|s| s.borrow().portfolios.get(&id).cloned())
-        .ok_or(DataError::NotFound)?;
-    if !can_view_client(p, port.client_id).await? {
-        return Err(DataError::Unauthorized);
-    }
-    Ok(port)
+#[query]
+fn get_portfolio(id: u64) -> DataResult<Portfolio> {
+    auth_check()?;
+    STATE.with(|s| {
+        s.borrow()
+            .portfolios
+            .get(&id)
+            .cloned()
+            .ok_or(DataError::NotFound)
+    })
 }
 
-#[query(composite = true)]
-async fn list_meetings(client_id: u64) -> DataResult<Vec<Meeting>> {
-    let p = caller();
-    if !can_view_client(p, client_id).await? {
-        return Err(DataError::Unauthorized);
-    }
+#[query]
+fn list_meetings(client_id: u64) -> DataResult<Vec<Meeting>> {
+    auth_check()?;
     Ok(STATE.with(|s| {
         let st = s.borrow();
         let mut out: Vec<Meeting> = st
@@ -1162,12 +1142,9 @@ async fn list_meetings(client_id: u64) -> DataResult<Vec<Meeting>> {
     }))
 }
 
-#[query(composite = true)]
-async fn list_trade_ideas(client_id: u64) -> DataResult<Vec<TradeIdea>> {
-    let p = caller();
-    if !can_view_client(p, client_id).await? {
-        return Err(DataError::Unauthorized);
-    }
+#[query]
+fn list_trade_ideas(client_id: u64) -> DataResult<Vec<TradeIdea>> {
+    auth_check()?;
     Ok(STATE.with(|s| {
         let st = s.borrow();
         let mut out: Vec<TradeIdea> = st

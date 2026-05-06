@@ -31,7 +31,11 @@
 	$effect(() => {
 		void auth.state.principal;
 		if (!auth.state.backends || !auth.state.authenticated) return;
-		auth.state.backends.data.list_clients().then((cs) => (clients = cs));
+		auth.state.backends.data.list_clients().then((all) => {
+			clients = auth.canSeeAllClients()
+				? all
+				: all.filter((c) => auth.canSeeClient(c.id));
+		});
 	});
 
 	const currentIntent = $derived(intents.find((i) => i.value === intentValue));

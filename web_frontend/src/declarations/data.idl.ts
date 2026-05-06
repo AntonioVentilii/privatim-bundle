@@ -129,11 +129,11 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 	const ResultTradeIdeas = IDL.Variant({ Ok: IDL.Vec(TradeIdea), Err: DataError });
 
 	return IDL.Service({
-		list_clients: IDL.Func([], [IDL.Vec(Client)], ['composite_query']),
-		get_client: IDL.Func([IDL.Nat64], [ResultClient], ['composite_query']),
-		get_portfolio: IDL.Func([IDL.Nat64], [ResultPortfolio], ['composite_query']),
-		list_meetings: IDL.Func([IDL.Nat64], [ResultMeetings], ['composite_query']),
-		list_trade_ideas: IDL.Func([IDL.Nat64], [ResultTradeIdeas], ['composite_query']),
+		list_clients: IDL.Func([], [IDL.Vec(Client)], ['query']),
+		get_client: IDL.Func([IDL.Nat64], [ResultClient], ['query']),
+		get_portfolio: IDL.Func([IDL.Nat64], [ResultPortfolio], ['query']),
+		list_meetings: IDL.Func([IDL.Nat64], [ResultMeetings], ['query']),
+		list_trade_ideas: IDL.Func([IDL.Nat64], [ResultTradeIdeas], ['query']),
 		config: IDL.Func(
 			[],
 			[IDL.Opt(IDL.Principal), IDL.Opt(IDL.Principal)],
