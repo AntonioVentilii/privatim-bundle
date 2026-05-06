@@ -1,0 +1,99 @@
+@import 'tailwindcss';
+
+/*
+ * Privatim palette — restrained, paper-like, institutional.
+ * Cream paper background, charcoal ink, burgundy accent (Swiss flag-adjacent
+ * but muted), copper/old-gold for secondary, and a single thin rule colour
+ * for borders. The visual register is Old World Bank, not SaaS dashboard.
+ */
+@theme {
+	--font-display: 'Inter', system-ui, sans-serif;
+	--font-serif: 'Source Serif 4', 'Georgia', serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+	--color-paper: oklch(0.97 0.01 80);
+	--color-paper-deep: oklch(0.93 0.012 80);
+	--color-ink: oklch(0.18 0.01 60);
+	--color-ink-muted: oklch(0.42 0.01 60);
+	--color-ink-faint: oklch(0.62 0.01 60);
+
+	--color-rule: oklch(0.84 0.012 70);
+	--color-rule-strong: oklch(0.74 0.014 70);
+
+	--color-burgundy: oklch(0.38 0.13 20);
+	--color-burgundy-deep: oklch(0.28 0.12 20);
+	--color-burgundy-soft: oklch(0.92 0.04 20);
+
+	--color-copper: oklch(0.62 0.1 55);
+	--color-copper-soft: oklch(0.92 0.04 80);
+
+	--color-good: oklch(0.45 0.11 145);
+	--color-warn: oklch(0.55 0.13 65);
+	--color-bad: oklch(0.45 0.18 25);
+}
+
+html {
+	font-family: var(--font-display);
+	background: var(--color-paper);
+	color: var(--color-ink);
+}
+
+body {
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	font-feature-settings: 'ss01', 'cv11';
+}
+
+::selection {
+	background: var(--color-burgundy);
+	color: var(--color-paper);
+}
+
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+::-webkit-scrollbar-thumb {
+	background: oklch(0 0 0 / 0.18);
+	border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: oklch(0 0 0 / 0.32);
+}
+
+/* Subtle paper grain — barely visible, but breaks the flat-color SaaS feel. */
+.paper-grain {
+	background-image: radial-gradient(oklch(0 0 0 / 0.022) 1px, transparent 1px);
+	background-size: 4px 4px;
+}
+
+@utility surface {
+	background: var(--color-paper);
+	border: 1px solid var(--color-rule);
+}
+
+@utility surface-deep {
+	background: var(--color-paper-deep);
+	border: 1px solid var(--color-rule);
+}
+
+@utility ink {
+	color: var(--color-ink);
+}
+
+@utility ink-muted {
+	color: var(--color-ink-muted);
+}
+
+@utility rule-line {
+	border-color: var(--color-rule);
+}
+
+@utility burgundy {
+	color: var(--color-burgundy);
+}
+
+@utility numeral {
+	font-feature-settings: 'tnum';
+	font-variant-numeric: tabular-nums;
+}

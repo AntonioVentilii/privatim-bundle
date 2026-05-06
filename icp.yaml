@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://github.com/dfinity/icp-cli/raw/refs/tags/v0.2.0/docs/schemas/icp-yaml-schema.json
+
+canisters:
+  - app_backend
+  - ai_assistant
+  - web_frontend

@@ -1,0 +1,51 @@
+import type { ActorMethod } from '@dfinity/agent';
+import type { Principal } from '@dfinity/principal';
+
+export type AssistantIntent =
+	| { PortfolioOverview: null }
+	| { RiskAssessment: null }
+	| { KycStatus: null }
+	| { MeetingDigest: null }
+	| { OpenTradeIdeas: null }
+	| { FxExposureBook: null }
+	| { KycActionList: null };
+
+export interface AssistantRequest {
+	intent: AssistantIntent;
+	client_id: [] | [bigint];
+	raw_prompt: string;
+}
+
+export type CitationKind =
+	| { Client: null }
+	| { Portfolio: null }
+	| { Meeting: null }
+	| { TradeIdea: null };
+
+export interface AssistantCitation {
+	kind: CitationKind;
+	id: bigint;
+	label: string;
+}
+
+export interface AssistantResponse {
+	answer: string;
+	citations: AssistantCitation[];
+	audit_seq: bigint;
+	model: string;
+}
+
+export type AssistantError =
+	| { Unauthorized: null }
+	| { NotFound: null }
+	| { BackendUnreachable: string };
+
+export type ResultUnit = { Ok: null } | { Err: AssistantError };
+export type ResultResponse = { Ok: AssistantResponse } | { Err: AssistantError };
+
+export interface AiAssistantService {
+	whoami: ActorMethod<[], Principal>;
+	get_app_backend_principal: ActorMethod<[], [] | [Principal]>;
+	set_app_backend: ActorMethod<[Principal], ResultUnit>;
+	ask: ActorMethod<[AssistantRequest], ResultResponse>;
+}

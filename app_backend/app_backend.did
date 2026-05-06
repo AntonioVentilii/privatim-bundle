@@ -1,0 +1,166 @@
+type Role = variant { Advisor; Compliance; Admin };
+
+type ClientType = variant { Individual; Family; Corporate };
+type KycStatus = variant { Pending; Approved; Expired };
+type RiskProfile = variant { Conservative; Balanced; Growth; Speculative };
+type AssetClass = variant { Equity; FixedIncome; Cash; Fx; Commodity };
+type TradeIdeaStatus = variant { Draft; Approved; Rejected; Executed };
+type AccessPurpose = variant {
+  ManualReview;
+  TradeIdeaPreparation;
+  AssistantQuery;
+  ComplianceReview;
+  KycRefresh;
+};
+
+type Position = record {
+  ticker : text;
+  asset_class : AssetClass;
+  quantity : nat64;
+  avg_cost_chf_cents : nat64;
+  current_price_chf_cents : nat64;
+};
+
+type Portfolio = record {
+  id : nat64;
+  client_id : nat64;
+  name : text;
+  base_currency : text;
+  positions : vec Position;
+  cash_chf_cents : int64;
+  last_valued_at_ns : nat64;
+};
+
+type Client = record {
+  id : nat64;
+  display_name : text;
+  legal_name : text;
+  client_type : ClientType;
+  tax_residency : text;
+  primary_advisor : principal;
+  kyc_status : KycStatus;
+  kyc_expires_ns : nat64;
+  risk_profile : RiskProfile;
+  aum_chf : nat64;
+  created_at_ns : nat64;
+  portfolio_ids : vec nat64;
+};
+
+type Meeting = record {
+  id : nat64;
+  client_id : nat64;
+  advisor : principal;
+  occurred_at_ns : nat64;
+  title : text;
+  notes_md : text;
+  decisions : vec text;
+  follow_ups : vec text;
+};
+
+type TradeIdea = record {
+  id : nat64;
+  client_id : nat64;
+  portfolio_id : opt nat64;
+  proposed_by : principal;
+  proposed_at_ns : nat64;
+  title : text;
+  rationale : text;
+  status : TradeIdeaStatus;
+};
+
+type AuditAction = variant {
+  ClientCreated : record { client_id : nat64 };
+  ClientKycUpdated : record { client_id : nat64; status : KycStatus };
+  ClientReassigned : record { client_id : nat64; to : principal };
+  MeetingAdded : record { client_id : nat64; meeting_id : nat64 };
+  TradeIdeaProposed : record { client_id : nat64; trade_idea_id : nat64 };
+  TradeIdeaStatusChanged : record { trade_idea_id : nat64; status : TradeIdeaStatus };
+  RoleGranted : record { grantee : principal; role : Role };
+  RoleRevoked : record { grantee : principal; role : Role };
+  ClientAccessed : record { client_id : nat64; purpose : AccessPurpose };
+  AssistantQueried : record { client_id : opt nat64; intent : text };
+  AssistantResponded : record { client_id : opt nat64; intent : text; citations : vec nat64 };
+  ComplianceExport : record { from_seq : nat64; to_seq : nat64 };
+};
+
+type AuditEntry = record {
+  seq : nat64;
+  prev_hash : text;
+  hash : text;
+  ts_ns : nat64;
+  caller : principal;
+  action : AuditAction;
+};
+
+type AuditPage = record {
+  entries : vec AuditEntry;
+  next_cursor : opt nat64;
+  total : nat64;
+};
+
+type AuditHead = record { seq : nat64; hash : text };
+
+type ComplianceExport = record {
+  exported_at_ns : nat64;
+  exporter : principal;
+  from_seq : nat64;
+  to_seq : nat64;
+  head_hash : text;
+  entries : vec AuditEntry;
+};
+
+type WhoAmI = record { principal : principal; roles : vec Role };
+
+type AppError = variant {
+  Unauthorized;
+  NotFound;
+  InvalidArgument : text;
+};
+
+type CreateClientArgs = record {
+  display_name : text;
+  legal_name : text;
+  client_type : ClientType;
+  tax_residency : text;
+  risk_profile : RiskProfile;
+};
+
+type AddMeetingArgs = record {
+  client_id : nat64;
+  title : text;
+  notes_md : text;
+  decisions : vec text;
+  follow_ups : vec text;
+};
+
+type AddTradeIdeaArgs = record {
+  client_id : nat64;
+  portfolio_id : opt nat64;
+  title : text;
+  rationale : text;
+};
+
+service : () -> {
+  whoami : () -> (WhoAmI) query;
+  list_clients : () -> (vec Client) query;
+  get_client : (nat64) -> (variant { Ok : Client; Err : AppError }) query;
+  get_portfolio : (nat64) -> (variant { Ok : Portfolio; Err : AppError }) query;
+  list_meetings : (nat64) -> (variant { Ok : vec Meeting; Err : AppError }) query;
+  list_trade_ideas : (nat64) -> (variant { Ok : vec TradeIdea; Err : AppError }) query;
+  audit_head : () -> (AuditHead) query;
+  audit_log_page : (opt nat64, nat64) -> (AuditPage) query;
+
+  record_client_access : (nat64, AccessPurpose) -> (variant { Ok; Err : AppError });
+  create_client : (CreateClientArgs) -> (variant { Ok : nat64; Err : AppError });
+  update_kyc : (nat64, KycStatus) -> (variant { Ok; Err : AppError });
+  assign_advisor : (nat64, principal) -> (variant { Ok; Err : AppError });
+  add_meeting : (AddMeetingArgs) -> (variant { Ok : nat64; Err : AppError });
+  add_trade_idea : (AddTradeIdeaArgs) -> (variant { Ok : nat64; Err : AppError });
+  set_trade_idea_status : (nat64, TradeIdeaStatus) -> (variant { Ok; Err : AppError });
+  grant_role : (principal, Role) -> (variant { Ok; Err : AppError });
+  revoke_role : (principal, Role) -> (variant { Ok; Err : AppError });
+  signed_audit_export : (nat64, nat64) -> (variant { Ok : ComplianceExport; Err : AppError });
+  record_assistant_interaction : (opt nat64, text, vec nat64, principal) -> (variant { Ok; Err : AppError });
+  admit_ai_assistant : (principal) -> (variant { Ok; Err : AppError });
+  reset_demo : () -> (variant { Ok : nat64; Err : AppError });
+}
