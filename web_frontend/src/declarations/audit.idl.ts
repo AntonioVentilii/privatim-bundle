@@ -103,7 +103,7 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 		admit_writer: IDL.Func([IDL.Principal], [Result], []),
 		revoke_writer: IDL.Func([IDL.Principal], [Result], []),
 		set_identity_canister: IDL.Func([IDL.Principal], [Result], []),
-		record: IDL.Func([AuditAction, IDL.Principal], [ResultNat64], []),
+		append: IDL.Func([AuditAction, IDL.Principal], [ResultNat64], []),
 		signed_audit_export: IDL.Func([IDL.Nat64, IDL.Nat64], [ResultExport], []),
 		reset_demo: IDL.Func([], [ResultNat64], [])
 	});

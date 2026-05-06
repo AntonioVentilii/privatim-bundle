@@ -425,12 +425,12 @@ async fn record_audit(
     on_behalf_of: Principal,
 ) -> AssistantResult<()> {
     let res: (Result<u64, AuditError>,) =
-        ic_cdk::api::call::call(audit, "record", (action, on_behalf_of))
+        ic_cdk::api::call::call(audit, "append", (action, on_behalf_of))
             .await
-            .map_err(|e| AssistantError::BackendUnreachable(format!("audit.record: {e:?}")))?;
+            .map_err(|e| AssistantError::BackendUnreachable(format!("audit.append: {e:?}")))?;
     res.0
         .map(|_| ())
-        .map_err(|e| AssistantError::BackendUnreachable(format!("audit.record: {e:?}")))
+        .map_err(|e| AssistantError::BackendUnreachable(format!("audit.append: {e:?}")))
 }
 
 // ───────────────────── synth handlers ─────────────────────

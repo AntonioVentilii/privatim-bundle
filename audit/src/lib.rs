@@ -382,7 +382,7 @@ async fn audit_log_page(cursor: Option<u64>, limit: u64) -> AuditPage {
 // ───────────────────── writes ─────────────────────
 
 #[update]
-fn record(action: AuditAction, on_behalf_of: Principal) -> AuditResult<u64> {
+fn append(action: AuditAction, on_behalf_of: Principal) -> AuditResult<u64> {
     let who = caller();
     let allowed = STATE.with(|s| s.borrow().writers.contains(&who))
         || ic_cdk::api::is_controller(&who);

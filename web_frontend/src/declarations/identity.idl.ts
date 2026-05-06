@@ -8,7 +8,7 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 	});
 
 	const WhoAmI = IDL.Record({
-		principal: IDL.Principal,
+		id: IDL.Principal,
 		roles: IDL.Vec(Role),
 		assigned_clients: IDL.Vec(IDL.Nat64)
 	});

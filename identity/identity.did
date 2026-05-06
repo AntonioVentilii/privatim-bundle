@@ -1,7 +1,7 @@
 type Role = variant { Advisor; Compliance; Admin };
 
 type WhoAmI = record {
-  principal : principal;
+  id : principal;
   roles : vec Role;
   assigned_clients : vec nat64;
 };

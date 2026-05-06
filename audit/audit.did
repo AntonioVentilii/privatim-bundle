@@ -70,7 +70,7 @@ service : () -> {
   admit_writer : (principal) -> (variant { Ok; Err : AuditError });
   revoke_writer : (principal) -> (variant { Ok; Err : AuditError });
   set_identity_canister : (principal) -> (variant { Ok; Err : AuditError });
-  record : (AuditAction, principal) -> (variant { Ok : nat64; Err : AuditError });
+  append : (AuditAction, principal) -> (variant { Ok : nat64; Err : AuditError });
   signed_audit_export : (nat64, nat64) -> (variant { Ok : ComplianceExport; Err : AuditError });
   reset_demo : () -> (variant { Ok : nat64; Err : AuditError });
 }

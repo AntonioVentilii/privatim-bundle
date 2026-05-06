@@ -4,7 +4,7 @@ import type { Principal } from '@dfinity/principal';
 export type Role = { Advisor: null } | { Compliance: null } | { Admin: null };
 
 export interface WhoAmI {
-	principal: Principal;
+	id: Principal;
 	roles: Role[];
 	assigned_clients: bigint[];
 }

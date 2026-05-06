@@ -34,7 +34,10 @@ pub enum Role {
 
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
 pub struct WhoAmI {
-    pub principal: Principal,
+    /// The caller's principal. Named `id` (not `principal`) because
+    /// `principal` is a reserved keyword in candid and cannot be used as
+    /// a record field name without escaping.
+    pub id: Principal,
     pub roles: Vec<Role>,
     pub assigned_clients: Vec<u64>,
 }
@@ -140,7 +143,7 @@ fn whoami() -> WhoAmI {
     STATE.with(|s| {
         let st = s.borrow();
         WhoAmI {
-            principal: p,
+            id: p,
             roles: st
                 .roles
                 .get(&p)

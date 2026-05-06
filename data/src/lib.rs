@@ -293,9 +293,9 @@ async fn assign_client_in_identity(advisor: Principal, client_id: u64) -> DataRe
 async fn record_audit(action: AuditAction, on_behalf_of: Principal) -> DataResult<()> {
     let audit = get_audit()?;
     let _: (Result<u64, candid::Reserved>,) =
-        ic_cdk::api::call::call(audit, "record", (action, on_behalf_of))
+        ic_cdk::api::call::call(audit, "append", (action, on_behalf_of))
             .await
-            .map_err(|e| DataError::UpstreamFailed(format!("audit.record: {e:?}")))?;
+            .map_err(|e| DataError::UpstreamFailed(format!("audit.append: {e:?}")))?;
     Ok(())
 }
 
@@ -465,6 +465,410 @@ fn seed_idea(
     );
 }
 
+// ───────────────────── procedural-data generator ─────────────────────
+//
+// A tiny LCG seeded from a fixed constant so every fresh install gets
+// the same procedurally-generated workspace. Adds 12 more clients on top
+// of the hand-crafted 12, plus a sparse layer of random meetings and
+// trade ideas. Total population after seed: ~24 clients, ~40 meetings,
+// ~30 trade ideas, with realistic variance — some clients have lots of
+// activity, some are nearly empty.
+
+struct Lcg(u64);
+
+impl Lcg {
+    fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        self.0
+    }
+    fn pct(&mut self) -> u8 {
+        (self.next() % 100) as u8
+    }
+    fn pick<'a, T>(&mut self, slice: &'a [T]) -> &'a T {
+        &slice[(self.next() % slice.len() as u64) as usize]
+    }
+    fn range(&mut self, lo: u64, hi: u64) -> u64 {
+        lo + self.next() % (hi - lo + 1)
+    }
+}
+
+const FIRST_DE: &[&str] = &[
+    "Hans", "Werner", "Beat", "Markus", "Daniel", "Stefan", "Andreas", "Christian",
+    "Heinrich", "Walter", "Anna", "Maria", "Christine", "Claudia", "Sabine",
+    "Petra", "Heidi", "Ursula",
+];
+const FIRST_FR: &[&str] = &[
+    "Pierre", "Jean", "François", "André", "Marc", "Patrick", "Olivier", "Bernard",
+    "Sophie", "Catherine", "Martine", "Isabelle", "Nathalie", "Véronique",
+];
+const FIRST_IT: &[&str] = &[
+    "Marco", "Luca", "Gianni", "Alessandro", "Fabio", "Stefano", "Roberto",
+    "Giulia", "Francesca", "Valentina",
+];
+const LAST_DE: &[&str] = &[
+    "Müller", "Meier", "Schmid", "Keller", "Weber", "Huber", "Wyss", "Steiner",
+    "Frei", "Brunner", "Berger", "Studer", "Käppeli", "Schlegel",
+];
+const LAST_FR: &[&str] = &[
+    "Dubois", "Martin", "Bernard", "Petit", "Moreau", "Roux", "Lambert", "Vincent",
+    "Bonnard", "Chappuis",
+];
+const LAST_IT: &[&str] = &[
+    "Rossi", "Ferrari", "Bianchi", "Romano", "Conti", "Russo", "Esposito",
+    "Greco", "Marini",
+];
+
+const CORPORATE_SUFFIXES: &[&str] = &[
+    "AG", "SA", "GmbH", "SARL", "Holding AG", "Treuhand AG", "Industries SA",
+    "Capital SA", "Invest AG", "Group SA",
+];
+const FAMILY_SUFFIXES: &[&str] = &[
+    "Family", "Familie", "Famille", "Famiglia", "Trust", "Estate",
+];
+
+const RESIDENCIES: &[&str] = &[
+    "CH-ZH", "CH-GE", "CH-VD", "CH-ZG", "CH-BS", "CH-BE", "CH-LU", "CH-SG",
+    "CH-TI", "CH-AG",
+];
+
+const PORTFOLIO_NAMES: &[&str] = &[
+    "Discretionary Mandate",
+    "Treasury Liquidity",
+    "Pension Reserve",
+    "Income Account",
+    "Growth Account",
+    "Macro Hedge",
+    "Family Office",
+    "Stable Income",
+    "Tactical Equity",
+    "USD Discretionary",
+    "EUR Balanced",
+    "Capital Preservation",
+];
+
+const CURRENCIES: &[&str] = &["CHF", "USD", "EUR"];
+
+#[allow(clippy::type_complexity)]
+const TICKER_CATALOG: &[(&str, AssetClass, u64, u64)] = &[
+    // (ticker, class, avg_cost_chf_cents/unit, current_price_chf_cents/unit)
+    ("NESN.SW", AssetClass::Equity, 9_500_00, 10_220_00),
+    ("NOVN.SW", AssetClass::Equity, 8_700_00, 9_350_00),
+    ("ROG.SW", AssetClass::Equity, 24_500_00, 23_900_00),
+    ("UBSG.SW", AssetClass::Equity, 25_30, 27_60),
+    ("ABBN.SW", AssetClass::Equity, 38_90, 47_20),
+    ("ZURN.SW", AssetClass::Equity, 480_50, 512_30),
+    ("CSGN.SW", AssetClass::Equity, 12_40, 8_90),
+    ("HOLN.SW", AssetClass::Equity, 64_20, 71_80),
+    ("AAPL", AssetClass::Equity, 165_00, 198_50),
+    ("MSFT", AssetClass::Equity, 320_00, 410_75),
+    ("AMZN", AssetClass::Equity, 145_00, 178_30),
+    ("GOOGL", AssetClass::Equity, 138_00, 165_40),
+    ("TSLA", AssetClass::Equity, 225_00, 192_60),
+    ("BUND-10Y", AssetClass::FixedIncome, 9_900_00, 9_785_00),
+    ("CH-CONFED-30Y", AssetClass::FixedIncome, 9_700_00, 9_640_00),
+    ("US-T-10Y", AssetClass::FixedIncome, 9_850_00, 9_710_00),
+    ("EUR-BUND-5Y", AssetClass::FixedIncome, 9_950_00, 9_880_00),
+    ("XAU/CHF", AssetClass::Commodity, 6_300_00, 6_580_00),
+    ("WTI/CHF", AssetClass::Commodity, 7_200_00, 7_810_00),
+];
+
+const MEETING_TITLES: &[&str] = &[
+    "Quarterly portfolio review",
+    "Annual KYC refresh",
+    "Strategy and rebalancing call",
+    "Mandate update conversation",
+    "Year-end tax planning",
+    "Family office governance review",
+    "Liquidity and cashflow planning",
+    "Risk-profile reaffirmation",
+    "Investment committee follow-up",
+    "Custody and reporting briefing",
+];
+
+const MEETING_NOTES: &[&str] = &[
+    "Reviewed YTD performance against benchmark. Portfolio tracking within tolerance; no major reallocation indicated. Discussed potential ESG screening tightening for next year.",
+    "Walked through revised risk-profile questionnaire. Client confirmed preference for current mandate; updated suitability documentation accordingly.",
+    "Reviewed cashflow projections for the next 12 months. Recommended building a liquidity buffer ahead of upcoming expected drawdowns. Client approved.",
+    "Discussed treasurer's view on CHF rate path; agreed to lengthen duration on operating cash sleeve via Bund ladder construction.",
+    "Reviewed family-office governance structure following recent reorganisation. Updated discretionary mandate to reflect new beneficial-ownership chart.",
+    "Mark-to-market vs. declared AUM showed minor variance from cash sweeps; reconciled. No action required.",
+    "Discussed adding a small commodities sleeve. Reviewed storage/custody implications; deferred to next committee meeting.",
+    "Annual review of advisor fee schedule. No change requested.",
+    "Reviewed concentrated tech exposure. Walked through volatility tradeoff vs. growth profile. No action this quarter; reassess in 6 weeks.",
+    "Compliance follow-up on outstanding KYC documentation. Identified missing UBO chart signature page; chase scheduled.",
+];
+
+const MEETING_DECISIONS: &[&str] = &[
+    "Maintain current allocation",
+    "Reduce equity concentration to <30% NAV",
+    "Add 5% commodities sleeve",
+    "Move to 5y avg duration on CHF treasury",
+    "Approve EUR-hedged Bund tranche",
+    "Refresh KYC for 5 years",
+    "Enable ESG screening",
+    "No new positions until KYC approved",
+    "Increase gold allocation to 12% NAV",
+    "Cap AAPL+MSFT at 25% of USD discretionary",
+];
+
+const MEETING_FOLLOW_UPS: &[&str] = &[
+    "Send updated mandate for signature",
+    "Schedule pension-trustee call",
+    "Source futures-broker confirmation",
+    "Chase signed UBO chart",
+    "Prepare scenario analysis: ±10% tech exposure",
+    "Send hedging cost analysis",
+    "Confirm storage charges with custodian",
+    "Schedule IC meeting next quarter",
+    "Document risk-profile reaffirmation",
+    "Update suitability questionnaire",
+];
+
+const IDEA_TITLES: &[&str] = &[
+    "Reduce single-stock concentration",
+    "Add CHF-hedged EUR Bund tranche",
+    "Lengthen duration to 5y average",
+    "Increase gold allocation",
+    "Cap tech exposure at 25%",
+    "Rotate banks → consumer staples",
+    "Trim Roche, add Novartis",
+    "Add 5% commodities futures sleeve",
+    "Liquidate underperforming equity sleeve",
+    "Initiate USD treasury ladder",
+    "Reduce European equity weight",
+    "Open small AI-thematic position",
+];
+
+const IDEA_RATIONALES: &[&str] = &[
+    "Current concentration sits above the policy ceiling. Trim to bring back within band.",
+    "FX hedging cost remains modest; the carry-adjusted return looks attractive vs. CHF cash.",
+    "Treasurer's view on rate path supports lengthening duration; current ladder is too short.",
+    "Macro hedge has been underweight; gold is the preferred instrument given the client's mandate.",
+    "Concentration risk vs. stated growth-with-guardrails profile; trim to reduce tracking error.",
+    "Banks have run; consumer staples offer better defensives at current valuations.",
+    "Pipeline concentration risk on Roche; rotate to Novartis as a partial hedge.",
+    "Per the discretionary mandate's recent expansion. Sourced through existing futures broker.",
+    "Equity sleeve has materially underperformed benchmark for two quarters; harvest losses.",
+    "Higher US yields make a treasury ladder a sensible income complement to existing CHF positions.",
+    "EU growth picture has weakened; reduce European equity weight in favor of US.",
+    "Small AI-thematic position to capture upside without breaching concentration limits.",
+];
+
+fn rand_client_name(rng: &mut Lcg, ctype: ClientType) -> (String, String) {
+    let lang = rng.pct();
+    let (firsts, lasts) = if lang < 50 {
+        (FIRST_DE, LAST_DE)
+    } else if lang < 80 {
+        (FIRST_FR, LAST_FR)
+    } else {
+        (FIRST_IT, LAST_IT)
+    };
+    let last = rng.pick(lasts);
+    match ctype {
+        ClientType::Individual => {
+            let first = rng.pick(firsts);
+            (format!("{last}, {first}"), format!("{first} {last}"))
+        }
+        ClientType::Family => {
+            let suffix = rng.pick(FAMILY_SUFFIXES);
+            (format!("{last} {suffix}"), format!("{last} {suffix}"))
+        }
+        ClientType::Corporate => {
+            let suffix = rng.pick(CORPORATE_SUFFIXES);
+            (
+                format!("{last} {suffix}"),
+                format!("{last} {suffix} (legal entity)"),
+            )
+        }
+    }
+}
+
+fn rand_position(rng: &mut Lcg) -> Position {
+    let (ticker, class, avg, cur) = *rng.pick(TICKER_CATALOG);
+    let qty = rng.range(50, 5_000);
+    Position {
+        ticker: ticker.into(),
+        asset_class: class,
+        quantity: qty,
+        avg_cost_chf_cents: avg,
+        current_price_chf_cents: cur,
+    }
+}
+
+fn seed_random_clients(state: &mut State, rng: &mut Lcg, n: usize) {
+    let now = time();
+    for _ in 0..n {
+        // Distribution: 50% individual, 25% family, 25% corporate.
+        let ctype = match rng.pct() {
+            0..=49 => ClientType::Individual,
+            50..=74 => ClientType::Family,
+            _ => ClientType::Corporate,
+        };
+        let (display, legal) = rand_client_name(rng, ctype);
+
+        let kyc = match rng.pct() {
+            0..=69 => KycStatus::Approved,
+            70..=89 => KycStatus::Pending,
+            _ => KycStatus::Expired,
+        };
+        let kyc_expires = match kyc {
+            KycStatus::Pending => now + 30 * one_day_ns(),
+            KycStatus::Approved => now + 365 * one_day_ns(),
+            KycStatus::Expired => now.saturating_sub((rng.range(7, 90)) * one_day_ns()),
+        };
+
+        let risk = match rng.pct() {
+            0..=29 => RiskProfile::Conservative,
+            30..=64 => RiskProfile::Balanced,
+            65..=89 => RiskProfile::Growth,
+            _ => RiskProfile::Speculative,
+        };
+
+        let residency = (*rng.pick(RESIDENCIES)).to_string();
+        let advisor = synthetic_principal((rng.next() % 200) as u8);
+        let aum_chf = rng.range(500_000, 30_000_000);
+
+        let n_portfolios = rng.range(1, 3) as usize;
+        let mut portfolio_ids = Vec::new();
+        for _ in 0..n_portfolios {
+            let pid = state.next_portfolio_id;
+            state.next_portfolio_id += 1;
+            let pname = (*rng.pick(PORTFOLIO_NAMES)).to_string();
+            let pcurr = (*rng.pick(CURRENCIES)).to_string();
+            let n_positions = rng.range(2, 5) as usize;
+            let positions: Vec<Position> = (0..n_positions).map(|_| rand_position(rng)).collect();
+            let cash = (rng.range(50_000, 3_000_000) as i64) * 100; // CHF cents
+            state.portfolios.insert(
+                pid,
+                Portfolio {
+                    id: pid,
+                    client_id: state.next_client_id,
+                    name: pname,
+                    base_currency: pcurr,
+                    positions,
+                    cash_chf_cents: cash,
+                    last_valued_at_ns: now,
+                },
+            );
+            portfolio_ids.push(pid);
+        }
+
+        let id = state.next_client_id;
+        state.next_client_id += 1;
+        state.clients.insert(
+            id,
+            Client {
+                id,
+                display_name: display,
+                legal_name: legal,
+                client_type: ctype,
+                tax_residency: residency,
+                primary_advisor: advisor,
+                kyc_status: kyc,
+                kyc_expires_ns: kyc_expires,
+                risk_profile: risk,
+                aum_chf,
+                created_at_ns: now.saturating_sub(rng.range(0, 720) * one_day_ns()),
+                portfolio_ids,
+            },
+        );
+    }
+}
+
+fn seed_random_meetings(state: &mut State, rng: &mut Lcg, count: usize) {
+    let now = time();
+    let client_ids: Vec<u64> = state.clients.keys().copied().collect();
+    if client_ids.is_empty() {
+        return;
+    }
+    for _ in 0..count {
+        let client_id = *rng.pick(&client_ids);
+        let advisor = state
+            .clients
+            .get(&client_id)
+            .map(|c| c.primary_advisor)
+            .unwrap_or(Principal::anonymous());
+        let mid = state.next_meeting_id;
+        state.next_meeting_id += 1;
+        let title = (*rng.pick(MEETING_TITLES)).to_string();
+        let notes = (*rng.pick(MEETING_NOTES)).to_string();
+        let n_dec = rng.range(0, 3) as usize;
+        let n_fu = rng.range(0, 3) as usize;
+        let decisions: Vec<String> = (0..n_dec)
+            .map(|_| (*rng.pick(MEETING_DECISIONS)).to_string())
+            .collect();
+        let follow_ups: Vec<String> = (0..n_fu)
+            .map(|_| (*rng.pick(MEETING_FOLLOW_UPS)).to_string())
+            .collect();
+        let days_ago = rng.range(1, 240);
+        state.meetings.insert(
+            mid,
+            Meeting {
+                id: mid,
+                client_id,
+                advisor,
+                occurred_at_ns: now.saturating_sub(days_ago * one_day_ns()),
+                title,
+                notes_md: notes,
+                decisions,
+                follow_ups,
+            },
+        );
+    }
+}
+
+fn seed_random_ideas(state: &mut State, rng: &mut Lcg, count: usize) {
+    let now = time();
+    let client_ids: Vec<u64> = state.clients.keys().copied().collect();
+    if client_ids.is_empty() {
+        return;
+    }
+    for _ in 0..count {
+        let client_id = *rng.pick(&client_ids);
+        let advisor = state
+            .clients
+            .get(&client_id)
+            .map(|c| c.primary_advisor)
+            .unwrap_or(Principal::anonymous());
+        let portfolio_id = state
+            .clients
+            .get(&client_id)
+            .and_then(|c| c.portfolio_ids.first().copied());
+        let tid = state.next_trade_idea_id;
+        state.next_trade_idea_id += 1;
+        let title = (*rng.pick(IDEA_TITLES)).to_string();
+        let rationale = (*rng.pick(IDEA_RATIONALES)).to_string();
+        let status = match rng.pct() {
+            0..=39 => TradeIdeaStatus::Draft,
+            40..=69 => TradeIdeaStatus::Approved,
+            70..=89 => TradeIdeaStatus::Executed,
+            _ => TradeIdeaStatus::Rejected,
+        };
+        let days_ago = rng.range(1, 90);
+        state.trade_ideas.insert(
+            tid,
+            TradeIdea {
+                id: tid,
+                client_id,
+                portfolio_id,
+                proposed_by: advisor,
+                proposed_at_ns: now.saturating_sub(days_ago * one_day_ns()),
+                title,
+                rationale,
+                status,
+            },
+        );
+    }
+}
+
+// ───────────────────── seed_demo (hand-crafted + procedural) ─────────────
+
 fn seed_demo(state: &mut State) {
     let a1 = synthetic_principal(11);
     let a2 = synthetic_principal(22);
@@ -574,6 +978,14 @@ fn seed_demo(state: &mut State) {
     seed_idea(state, 10, Some(20), "Increase Khoury gold allocation to 12% NAV",
         "Per family-principal meeting. Buy XAU/CHF in tranches over 4 weeks to reduce timing risk.",
         TradeIdeaStatus::Approved);
+
+    // Procedural layer: ~12 more clients, ~30 meetings, ~25 trade ideas with
+    // realistic variance — some clients have 0 meetings/ideas, some have
+    // many. Deterministic seed so every install is reproducible.
+    let mut rng = Lcg::new(0xCAFE_BABE_C0DE_F00D);
+    seed_random_clients(state, &mut rng, 12);
+    seed_random_meetings(state, &mut rng, 30);
+    seed_random_ideas(state, &mut rng, 25);
 }
 
 // ───────────────────── lifecycle ─────────────────────
