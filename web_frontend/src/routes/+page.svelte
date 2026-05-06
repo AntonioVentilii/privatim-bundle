@@ -1,18 +1,19 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte';
 	import { formatChf, formatDateTime } from '$lib/format';
-	import type { Client, AuditHead } from '../declarations/app_backend.types';
+	import type { Client } from '../declarations/data.types';
+	import type { AuditHead } from '../declarations/audit.types';
 
 	let clients = $state<Client[]>([]);
 	let head = $state<AuditHead | null>(null);
 	let loading = $state(true);
 
 	async function load() {
-		const app = auth.state.app;
-		if (!app) return;
+		const b = auth.state.backends;
+		if (!b) return;
 		loading = true;
 		try {
-			[clients, head] = await Promise.all([app.list_clients(), app.audit_head()]);
+			[clients, head] = await Promise.all([b.data.list_clients(), b.audit.audit_head()]);
 		} finally {
 			loading = false;
 		}
@@ -21,7 +22,7 @@
 	$effect(() => {
 		void auth.state.principal;
 		void auth.state.ready;
-		if (auth.state.app) load();
+		if (auth.state.backends && auth.state.authenticated) load();
 	});
 
 	const totalAum = $derived(clients.reduce((s, c) => s + c.aum_chf, 0n));
@@ -35,7 +36,7 @@
 			class="ink-muted inline-flex items-center gap-2 text-[11px] tracking-[0.18em] uppercase"
 		>
 			<span class="size-1.5 rounded-full" style="background: var(--color-burgundy);"></span>
-			Swiss-locked engine · audit-chained · stub LLM
+			Swiss-locked engine · 5-canister architecture · audit-chained · stub LLM
 		</div>
 		<h1 class="font-serif text-4xl leading-tight font-black tracking-tight sm:text-5xl">
 			A workspace your <span class="burgundy">compliance officer</span> can sign off without

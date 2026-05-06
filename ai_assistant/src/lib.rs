@@ -1,27 +1,19 @@
 //! Privatim ai_assistant
 //!
-//! A *transparent stub LLM*. No model weights ship inside this canister.
-//! What it does:
+//! Transparent stub LLM. No model weights ship inside this canister.
 //!
 //! 1. Accepts a structured intent from the frontend (`PortfolioOverview`,
-//!    `RiskAssessment`, `KycStatus`, etc.) plus an optional `client_id`.
-//! 2. Issues an inter-canister query to `app_backend` under the caller's
-//!    identity to fetch only the records the caller is already authorised
-//!    to see.
+//!    `RiskAssessment`, …) plus an optional `client_id`.
+//! 2. Calls `data` (5-canister architecture) under the caller's identity to
+//!    fetch only the records the caller is already authorised to see.
 //! 3. Synthesises a natural-language answer from those records, with
-//!    inline citations referring to record IDs the answer was derived from.
-//! 4. Posts an `AssistantQueried` + `AssistantResponded` pair into the
-//!    `app_backend` audit chain via `record_assistant_interaction` so the
-//!    AI's activity is logged on the same hash chain as everything else.
+//!    citations referring to record IDs.
+//! 4. Records `AssistantQueried` + `AssistantResponded` directly on the
+//!    `audit` canister so the AI's activity lives on the same hash chain
+//!    as everything else.
 //!
-//! Concretely: this is a deterministic structured-query engine wearing an
-//! LLM's interface. The point isn't to fake intelligence; the point is to
-//! demonstrate the architecture (sovereign data → on-engine inference →
-//! audit-logged interaction) so that swapping in a real model later is a
-//! one-canister swap, not a re-architecture.
-//!
-//! The frontend labels this clearly as "Stub LLM — production deployment
-//! runs `<model>` on this engine's GPU node".
+//! UI labels this as `model: stub-v1` so we never claim to be more than
+//! we are. Swap-out path to a real on-engine LLM is one canister.
 
 use candid::{CandidType, Principal};
 use ic_cdk::api::msg_caller as caller;
@@ -33,19 +25,12 @@ use std::cell::RefCell;
 
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AssistantIntent {
-    /// "Summarise the portfolios for this client."
     PortfolioOverview,
-    /// "What's the risk concentration / asset-class breakdown for this client?"
     RiskAssessment,
-    /// "What's the current KYC status / when does it expire?"
     KycStatus,
-    /// "List recent meetings and decisions for this client."
     MeetingDigest,
-    /// "What trade ideas are outstanding for this client?"
     OpenTradeIdeas,
-    /// "Where is FX exposure across this advisor's book?" — no client_id.
     FxExposureBook,
-    /// "Which clients have an expired or expiring KYC across my book?" — no client_id.
     KycActionList,
 }
 
@@ -53,9 +38,6 @@ pub enum AssistantIntent {
 pub struct AssistantRequest {
     pub intent: AssistantIntent,
     pub client_id: Option<u64>,
-    /// Free-text the user typed, surfaced for the audit log only — not
-    /// interpreted (this is a stub). When a real LLM lands, this becomes
-    /// the actual prompt.
     pub raw_prompt: String,
 }
 
@@ -76,15 +58,9 @@ pub enum CitationKind {
 
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
 pub struct AssistantResponse {
-    /// The synthesised answer, plain text with `[#N]` citation markers.
     pub answer: String,
-    /// One per `[#N]` marker in `answer`.
     pub citations: Vec<AssistantCitation>,
-    /// The value of `app_backend`'s audit-log head AFTER this interaction
-    /// was logged. Lets the frontend confirm the interaction was chained.
     pub audit_seq: u64,
-    /// Cosmetic but informative — model identifier the frontend can show
-    /// alongside the answer. v1 is `"stub-v1"` so the UI doesn't lie.
     pub model: String,
 }
 
@@ -93,15 +69,12 @@ pub enum AssistantError {
     Unauthorized,
     NotFound,
     BackendUnreachable(String),
+    NotConfigured(String),
 }
 
 pub type AssistantResult<T> = Result<T, AssistantError>;
 
-// ───────────────────── shared types (mirrored from app_backend) ─────────
-
-// We mirror just the fields we need to query, hand-derived from the
-// app_backend candid. If app_backend's surface changes meaningfully we
-// regenerate these.
+// ───────────────────── shared types (mirrored from data) ─────────────
 
 #[derive(Clone, Copy, Debug, CandidType, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClientType {
@@ -140,15 +113,6 @@ pub enum TradeIdeaStatus {
     Approved,
     Rejected,
     Executed,
-}
-
-#[derive(Clone, Copy, Debug, CandidType, Serialize, Deserialize)]
-pub enum AccessPurpose {
-    ManualReview,
-    TradeIdeaPreparation,
-    AssistantQuery,
-    ComplianceReview,
-    KycRefresh,
 }
 
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
@@ -212,13 +176,16 @@ pub struct TradeIdea {
 }
 
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
-pub enum AppError {
+pub enum DataError {
     Unauthorized,
     NotFound,
     InvalidArgument(String),
+    IdentityCanisterNotConfigured,
+    AuditCanisterNotConfigured,
+    UpstreamFailed(String),
 }
 
-pub type AppResult<T> = Result<T, AppError>;
+pub type DataResult<T> = Result<T, DataError>;
 
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
 pub struct AuditHead {
@@ -226,26 +193,45 @@ pub struct AuditHead {
     pub hash: String,
 }
 
+#[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
+pub enum AuditAction {
+    AssistantQueried { client_id: Option<u64>, intent: String },
+    AssistantResponded {
+        client_id: Option<u64>,
+        intent: String,
+        citations: Vec<u64>,
+    },
+}
+
+#[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
+pub enum AuditError {
+    Unauthorized,
+    InvalidArgument(String),
+    IdentityCanisterNotConfigured,
+}
+
 // ───────────────────── state ─────────────────────
 
 #[derive(Default, CandidType, Serialize, Deserialize)]
 struct State {
-    /// Set on first `set_app_backend`. Without this, all calls fail loudly.
-    app_backend: Option<Principal>,
+    data_canister: Option<Principal>,
+    audit_canister: Option<Principal>,
 }
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
 }
 
-fn get_app_backend() -> Result<Principal, AssistantError> {
+fn get_data() -> AssistantResult<Principal> {
     STATE
-        .with(|s| s.borrow().app_backend)
-        .ok_or_else(|| {
-            AssistantError::BackendUnreachable(
-                "app_backend principal not registered; call set_app_backend".into(),
-            )
-        })
+        .with(|s| s.borrow().data_canister)
+        .ok_or_else(|| AssistantError::NotConfigured("data".into()))
+}
+
+fn get_audit() -> AssistantResult<Principal> {
+    STATE
+        .with(|s| s.borrow().audit_canister)
+        .ok_or_else(|| AssistantError::NotConfigured("audit".into()))
 }
 
 // ───────────────────── lifecycle ─────────────────────
@@ -275,12 +261,22 @@ fn post_upgrade() {
 // ───────────────────── config ─────────────────────
 
 #[update]
-fn set_app_backend(p: Principal) -> AssistantResult<()> {
+fn set_data_canister(p: Principal) -> AssistantResult<()> {
     let who = caller();
     if !ic_cdk::api::is_controller(&who) {
         return Err(AssistantError::Unauthorized);
     }
-    STATE.with(|s| s.borrow_mut().app_backend = Some(p));
+    STATE.with(|s| s.borrow_mut().data_canister = Some(p));
+    Ok(())
+}
+
+#[update]
+fn set_audit_canister(p: Principal) -> AssistantResult<()> {
+    let who = caller();
+    if !ic_cdk::api::is_controller(&who) {
+        return Err(AssistantError::Unauthorized);
+    }
+    STATE.with(|s| s.borrow_mut().audit_canister = Some(p));
     Ok(())
 }
 
@@ -290,8 +286,11 @@ fn whoami() -> Principal {
 }
 
 #[query]
-fn get_app_backend_principal() -> Option<Principal> {
-    STATE.with(|s| s.borrow().app_backend)
+fn config() -> (Option<Principal>, Option<Principal>) {
+    STATE.with(|s| {
+        let st = s.borrow();
+        (st.data_canister, st.audit_canister)
+    })
 }
 
 // ───────────────────── intent handlers ─────────────────────
@@ -304,38 +303,43 @@ async fn ask(req: AssistantRequest) -> AssistantResult<AssistantResponse> {
     if user == Principal::anonymous() {
         return Err(AssistantError::Unauthorized);
     }
-    let backend = get_app_backend()?;
+    let data = get_data()?;
+    let audit = get_audit()?;
 
     let (answer, citations) = match req.intent {
-        AssistantIntent::PortfolioOverview => {
-            handle_portfolio_overview(backend, req.client_id).await?
-        }
-        AssistantIntent::RiskAssessment => {
-            handle_risk_assessment(backend, req.client_id).await?
-        }
-        AssistantIntent::KycStatus => handle_kyc_status(backend, req.client_id).await?,
-        AssistantIntent::MeetingDigest => {
-            handle_meeting_digest(backend, req.client_id).await?
-        }
-        AssistantIntent::OpenTradeIdeas => {
-            handle_open_trade_ideas(backend, req.client_id).await?
-        }
-        AssistantIntent::FxExposureBook => handle_fx_exposure_book(backend).await?,
-        AssistantIntent::KycActionList => handle_kyc_action_list(backend).await?,
+        AssistantIntent::PortfolioOverview => handle_portfolio_overview(data, req.client_id).await?,
+        AssistantIntent::RiskAssessment => handle_risk_assessment(data, req.client_id).await?,
+        AssistantIntent::KycStatus => handle_kyc_status(data, req.client_id).await?,
+        AssistantIntent::MeetingDigest => handle_meeting_digest(data, req.client_id).await?,
+        AssistantIntent::OpenTradeIdeas => handle_open_trade_ideas(data, req.client_id).await?,
+        AssistantIntent::FxExposureBook => handle_fx_exposure_book(data).await?,
+        AssistantIntent::KycActionList => handle_kyc_action_list(data).await?,
     };
 
     let intent_label = intent_label(&req.intent);
     let citation_ids: Vec<u64> = citations.iter().map(|c| c.id).collect();
-    audit_interaction(
-        backend,
-        req.client_id,
-        intent_label.clone(),
-        citation_ids,
+
+    record_audit(
+        audit,
+        AuditAction::AssistantQueried {
+            client_id: req.client_id,
+            intent: intent_label.clone(),
+        },
+        user,
+    )
+    .await?;
+    record_audit(
+        audit,
+        AuditAction::AssistantResponded {
+            client_id: req.client_id,
+            intent: intent_label,
+            citations: citation_ids,
+        },
         user,
     )
     .await?;
 
-    let head = audit_head(backend).await?;
+    let head = audit_head(audit).await?;
 
     Ok(AssistantResponse {
         answer,
@@ -363,86 +367,80 @@ fn require_client_id(client_id: Option<u64>) -> AssistantResult<u64> {
 
 // ───────────────────── inter-canister helpers ─────────────────────
 
-async fn fetch_client(backend: Principal, id: u64) -> AssistantResult<Client> {
-    let res: (AppResult<Client>,) =
-        ic_cdk::api::call::call(backend, "get_client", (id,))
-            .await
-            .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
+async fn fetch_client(data: Principal, id: u64) -> AssistantResult<Client> {
+    let res: (DataResult<Client>,) = ic_cdk::api::call::call(data, "get_client", (id,))
+        .await
+        .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     match res.0 {
         Ok(c) => Ok(c),
-        Err(AppError::NotFound) => Err(AssistantError::NotFound),
+        Err(DataError::NotFound) => Err(AssistantError::NotFound),
         Err(_) => Err(AssistantError::Unauthorized),
     }
 }
 
-async fn fetch_portfolio(backend: Principal, id: u64) -> AssistantResult<Portfolio> {
-    let res: (AppResult<Portfolio>,) =
-        ic_cdk::api::call::call(backend, "get_portfolio", (id,))
-            .await
-            .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
+async fn fetch_portfolio(data: Principal, id: u64) -> AssistantResult<Portfolio> {
+    let res: (DataResult<Portfolio>,) = ic_cdk::api::call::call(data, "get_portfolio", (id,))
+        .await
+        .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     match res.0 {
         Ok(p) => Ok(p),
-        Err(AppError::NotFound) => Err(AssistantError::NotFound),
+        Err(DataError::NotFound) => Err(AssistantError::NotFound),
         Err(_) => Err(AssistantError::Unauthorized),
     }
 }
 
-async fn fetch_meetings(backend: Principal, client_id: u64) -> AssistantResult<Vec<Meeting>> {
-    let res: (AppResult<Vec<Meeting>>,) =
-        ic_cdk::api::call::call(backend, "list_meetings", (client_id,))
+async fn fetch_meetings(data: Principal, client_id: u64) -> AssistantResult<Vec<Meeting>> {
+    let res: (DataResult<Vec<Meeting>>,) =
+        ic_cdk::api::call::call(data, "list_meetings", (client_id,))
             .await
             .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     res.0.map_err(|_| AssistantError::Unauthorized)
 }
 
-async fn fetch_trade_ideas(backend: Principal, client_id: u64) -> AssistantResult<Vec<TradeIdea>> {
-    let res: (AppResult<Vec<TradeIdea>>,) =
-        ic_cdk::api::call::call(backend, "list_trade_ideas", (client_id,))
+async fn fetch_trade_ideas(data: Principal, client_id: u64) -> AssistantResult<Vec<TradeIdea>> {
+    let res: (DataResult<Vec<TradeIdea>>,) =
+        ic_cdk::api::call::call(data, "list_trade_ideas", (client_id,))
             .await
             .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     res.0.map_err(|_| AssistantError::Unauthorized)
 }
 
-async fn list_clients(backend: Principal) -> AssistantResult<Vec<Client>> {
-    let res: (Vec<Client>,) = ic_cdk::api::call::call(backend, "list_clients", ())
+async fn list_clients(data: Principal) -> AssistantResult<Vec<Client>> {
+    let res: (Vec<Client>,) = ic_cdk::api::call::call(data, "list_clients", ())
         .await
         .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     Ok(res.0)
 }
 
-async fn audit_head(backend: Principal) -> AssistantResult<AuditHead> {
-    let res: (AuditHead,) = ic_cdk::api::call::call(backend, "audit_head", ())
+async fn audit_head(audit: Principal) -> AssistantResult<AuditHead> {
+    let res: (AuditHead,) = ic_cdk::api::call::call(audit, "audit_head", ())
         .await
         .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
     Ok(res.0)
 }
 
-async fn audit_interaction(
-    backend: Principal,
-    client_id: Option<u64>,
-    intent: String,
-    citations: Vec<u64>,
-    user: Principal,
+async fn record_audit(
+    audit: Principal,
+    action: AuditAction,
+    on_behalf_of: Principal,
 ) -> AssistantResult<()> {
-    let res: (AppResult<()>,) = ic_cdk::api::call::call(
-        backend,
-        "record_assistant_interaction",
-        (client_id, intent, citations, user),
-    )
-    .await
-    .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))?;
+    let res: (Result<u64, AuditError>,) =
+        ic_cdk::api::call::call(audit, "record", (action, on_behalf_of))
+            .await
+            .map_err(|e| AssistantError::BackendUnreachable(format!("audit.record: {e:?}")))?;
     res.0
-        .map_err(|e| AssistantError::BackendUnreachable(format!("{e:?}")))
+        .map(|_| ())
+        .map_err(|e| AssistantError::BackendUnreachable(format!("audit.record: {e:?}")))
 }
 
 // ───────────────────── synth handlers ─────────────────────
 
 async fn handle_portfolio_overview(
-    backend: Principal,
+    data: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(backend, cid).await?;
+    let client = fetch_client(data, cid).await?;
     let mut citations = vec![AssistantCitation {
         kind: CitationKind::Client,
         id: client.id,
@@ -451,7 +449,7 @@ async fn handle_portfolio_overview(
     let mut total_value_chf: u128 = 0;
     let mut lines = Vec::new();
     for pid in &client.portfolio_ids {
-        let p = fetch_portfolio(backend, *pid).await?;
+        let p = fetch_portfolio(data, *pid).await?;
         let positions_value: u128 = p
             .positions
             .iter()
@@ -476,22 +474,22 @@ async fn handle_portfolio_overview(
         });
     }
     let answer = format!(
-        "**{}** [#0] holds {} portfolios with a combined mark-to-market value of CHF {}.\n\n{}\n\nThe declared AUM on the client record is CHF {}; differences against the calculated mark-to-market reflect cash sweeps and pending settlements (no live market feed in the showcase — prices are synthetic).",
+        "**{}** [#0] holds {} portfolios with a combined mark-to-market value of CHF {}.\n\n{}\n\nThe declared AUM on the client record is CHF {}; differences against the calculated mark-to-market reflect cash sweeps and pending settlements (synthetic prices in this showcase).",
         client.display_name,
         client.portfolio_ids.len(),
         format_chf(total_value_chf as i128),
         lines.join("\n"),
-        format_chf(client.aum_chf as i128 * 1)
+        format_chf(client.aum_chf as i128)
     );
     Ok((answer, citations))
 }
 
 async fn handle_risk_assessment(
-    backend: Principal,
+    data: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(backend, cid).await?;
+    let client = fetch_client(data, cid).await?;
     let mut citations = vec![AssistantCitation {
         kind: CitationKind::Client,
         id: client.id,
@@ -500,12 +498,13 @@ async fn handle_risk_assessment(
     let mut by_class: std::collections::BTreeMap<String, u128> = Default::default();
     let mut total: u128 = 0;
     for pid in &client.portfolio_ids {
-        let p = fetch_portfolio(backend, *pid).await?;
+        let p = fetch_portfolio(data, *pid).await?;
         for pos in &p.positions {
             let v = (pos.quantity as u128).saturating_mul(pos.current_price_chf_cents as u128);
             total = total.saturating_add(v);
-            *by_class.entry(format!("{:?}", pos.asset_class)).or_default() =
-                by_class.get(&format!("{:?}", pos.asset_class)).copied().unwrap_or(0) + v;
+            *by_class
+                .entry(format!("{:?}", pos.asset_class))
+                .or_default() += v;
         }
         citations.push(AssistantCitation {
             kind: CitationKind::Portfolio,
@@ -527,7 +526,11 @@ async fn handle_risk_assessment(
             format_chf((*value / 100) as i128)
         ));
     }
-    let mismatch = match (client.risk_profile, by_class.get("Equity").copied().unwrap_or(0), total) {
+    let mismatch = match (
+        client.risk_profile,
+        by_class.get("Equity").copied().unwrap_or(0),
+        total,
+    ) {
         (RiskProfile::Conservative, eq, t) if t > 0 && (eq as f64 / t as f64) > 0.40 => {
             "\n\n_Note: equity allocation exceeds 40% but the declared risk profile is Conservative — flag for review._"
         }
@@ -548,11 +551,11 @@ async fn handle_risk_assessment(
 }
 
 async fn handle_kyc_status(
-    backend: Principal,
+    data: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(backend, cid).await?;
+    let client = fetch_client(data, cid).await?;
     let citations = vec![AssistantCitation {
         kind: CitationKind::Client,
         id: client.id,
@@ -573,12 +576,12 @@ async fn handle_kyc_status(
 }
 
 async fn handle_meeting_digest(
-    backend: Principal,
+    data: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(backend, cid).await?;
-    let meetings = fetch_meetings(backend, cid).await?;
+    let client = fetch_client(data, cid).await?;
+    let meetings = fetch_meetings(data, cid).await?;
     let mut citations = vec![AssistantCitation {
         kind: CitationKind::Client,
         id: client.id,
@@ -615,12 +618,12 @@ async fn handle_meeting_digest(
 }
 
 async fn handle_open_trade_ideas(
-    backend: Principal,
+    data: Principal,
     client_id: Option<u64>,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
     let cid = require_client_id(client_id)?;
-    let client = fetch_client(backend, cid).await?;
-    let ideas = fetch_trade_ideas(backend, cid).await?;
+    let client = fetch_client(data, cid).await?;
+    let ideas = fetch_trade_ideas(data, cid).await?;
     let open: Vec<&TradeIdea> = ideas
         .iter()
         .filter(|i| matches!(i.status, TradeIdeaStatus::Draft | TradeIdeaStatus::Approved))
@@ -659,14 +662,14 @@ async fn handle_open_trade_ideas(
 }
 
 async fn handle_fx_exposure_book(
-    backend: Principal,
+    data: Principal,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
-    let clients = list_clients(backend).await?;
+    let clients = list_clients(data).await?;
     let mut citations = Vec::new();
     let mut by_currency: std::collections::BTreeMap<String, u128> = Default::default();
     for c in &clients {
         for pid in &c.portfolio_ids {
-            if let Ok(p) = fetch_portfolio(backend, *pid).await {
+            if let Ok(p) = fetch_portfolio(data, *pid).await {
                 let value: u128 = p
                     .positions
                     .iter()
@@ -698,9 +701,9 @@ async fn handle_fx_exposure_book(
 }
 
 async fn handle_kyc_action_list(
-    backend: Principal,
+    data: Principal,
 ) -> AssistantResult<(String, Vec<AssistantCitation>)> {
-    let clients = list_clients(backend).await?;
+    let clients = list_clients(data).await?;
     let mut citations = Vec::new();
     let mut lines = Vec::new();
     for c in &clients {

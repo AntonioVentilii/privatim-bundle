@@ -1,11 +1,4 @@
-import type {
-	AuditAction,
-	AuditEntry,
-	Role,
-	KycStatus,
-	TradeIdeaStatus,
-	AccessPurpose
-} from '../declarations/app_backend.types';
+import type { AuditAction, AuditEntry } from '../declarations/audit.types';
 import { variantKey } from './format';
 
 function keyOf(o: Record<string, unknown>): string {
@@ -14,32 +7,36 @@ function keyOf(o: Record<string, unknown>): string {
 
 function actionRepr(a: AuditAction): string {
 	if ('ClientCreated' in a) return `client_created:${a.ClientCreated.client_id}`;
-	if ('ClientKycUpdated' in a) {
-		return `client_kyc:${a.ClientKycUpdated.client_id}:${variantKeyDebug(
+	if ('ClientKycUpdated' in a)
+		return `client_kyc:${a.ClientKycUpdated.client_id}:${keyOf(
 			a.ClientKycUpdated.status as unknown as Record<string, unknown>
 		)}`;
-	}
-	if ('ClientReassigned' in a) {
+	if ('ClientReassigned' in a)
 		return `client_reassigned:${a.ClientReassigned.client_id}:${a.ClientReassigned.to.toText()}`;
-	}
 	if ('MeetingAdded' in a)
 		return `meeting:${a.MeetingAdded.client_id}:${a.MeetingAdded.meeting_id}`;
 	if ('TradeIdeaProposed' in a)
 		return `trade_idea:${a.TradeIdeaProposed.client_id}:${a.TradeIdeaProposed.trade_idea_id}`;
 	if ('TradeIdeaStatusChanged' in a)
-		return `trade_idea_status:${a.TradeIdeaStatusChanged.trade_idea_id}:${variantKeyDebug(
+		return `trade_idea_status:${a.TradeIdeaStatusChanged.trade_idea_id}:${keyOf(
 			a.TradeIdeaStatusChanged.status as unknown as Record<string, unknown>
 		)}`;
 	if ('RoleGranted' in a)
-		return `role_granted:${a.RoleGranted.grantee.toText()}:${variantKeyDebug(
+		return `role_granted:${a.RoleGranted.grantee.toText()}:${keyOf(
 			a.RoleGranted.role as unknown as Record<string, unknown>
 		)}`;
 	if ('RoleRevoked' in a)
-		return `role_revoked:${a.RoleRevoked.grantee.toText()}:${variantKeyDebug(
+		return `role_revoked:${a.RoleRevoked.grantee.toText()}:${keyOf(
 			a.RoleRevoked.role as unknown as Record<string, unknown>
 		)}`;
+	if ('ClientAssigned' in a)
+		return `client_assigned:${a.ClientAssigned.advisor.toText()}:${a.ClientAssigned.client_id}`;
+	if ('ClientUnassigned' in a)
+		return `client_unassigned:${a.ClientUnassigned.advisor.toText()}:${a.ClientUnassigned.client_id}`;
+	if ('AdminBootstrapped' in a) return `admin_bootstrapped:${a.AdminBootstrapped.admin.toText()}`;
+	if ('AiAssistantAdmitted' in a) return `ai_admitted:${a.AiAssistantAdmitted.ai.toText()}`;
 	if ('ClientAccessed' in a)
-		return `client_accessed:${a.ClientAccessed.client_id}:${variantKeyDebug(
+		return `client_accessed:${a.ClientAccessed.client_id}:${keyOf(
 			a.ClientAccessed.purpose as unknown as Record<string, unknown>
 		)}`;
 	if ('AssistantQueried' in a)
@@ -58,13 +55,6 @@ function actionRepr(a: AuditAction): string {
 	return _;
 }
 
-// Mirrors Rust's Debug repr for variants like KycStatus::Approved, RiskProfile::Conservative.
-// In Rust the audit-log builder formats a variant via {:?} as "Approved", not "Approved(())".
-function variantKeyDebug(v: Record<string, unknown>): string {
-	return keyOf(v);
-}
-
-// Mirrors `{:?}` printing of `Option<u64>`: `None` or `Some(42)`.
 function optDebug(o: [] | [bigint]): string {
 	return o.length === 0 ? 'None' : `Some(${o[0]})`;
 }
@@ -135,11 +125,10 @@ export async function verifyChain(entries: AuditEntry[]): Promise<ChainVerificat
 
 export function describeAction(a: AuditAction): string {
 	if ('ClientCreated' in a) return `Created client #${a.ClientCreated.client_id}`;
-	if ('ClientKycUpdated' in a) {
+	if ('ClientKycUpdated' in a)
 		return `Updated KYC for client #${a.ClientKycUpdated.client_id} → ${variantKey(
 			a.ClientKycUpdated.status as unknown as Record<string, unknown>
 		)}`;
-	}
 	if ('ClientReassigned' in a)
 		return `Reassigned client #${a.ClientReassigned.client_id}`;
 	if ('MeetingAdded' in a)
@@ -158,6 +147,12 @@ export function describeAction(a: AuditAction): string {
 		return `Revoked ${variantKey(
 			a.RoleRevoked.role as unknown as Record<string, unknown>
 		)} from ${a.RoleRevoked.grantee.toText()}`;
+	if ('ClientAssigned' in a)
+		return `Assigned client #${a.ClientAssigned.client_id} to advisor`;
+	if ('ClientUnassigned' in a)
+		return `Unassigned client #${a.ClientUnassigned.client_id} from advisor`;
+	if ('AdminBootstrapped' in a) return `Admin bootstrapped`;
+	if ('AiAssistantAdmitted' in a) return `Admitted AI assistant`;
 	if ('ClientAccessed' in a)
 		return `Accessed client #${a.ClientAccessed.client_id} (${variantKey(
 			a.ClientAccessed.purpose as unknown as Record<string, unknown>
@@ -183,12 +178,16 @@ export function appErrorMessage(err: unknown): string {
 		const e = err as Record<string, unknown>;
 		if ('Unauthorized' in e) return 'Not authorised.';
 		if ('NotFound' in e) return 'Not found.';
+		if ('AlreadyBootstrapped' in e) return 'Already bootstrapped.';
 		if ('InvalidArgument' in e) return `Invalid argument: ${String(e.InvalidArgument)}.`;
-		if ('BackendUnreachable' in e)
-			return `AI backend unreachable: ${String(e.BackendUnreachable)}.`;
+		if ('BackendUnreachable' in e) return `Backend unreachable: ${String(e.BackendUnreachable)}.`;
+		if ('NotConfigured' in e)
+			return `Canister not configured: ${String(e.NotConfigured)}. Run /admin/bootstrap.`;
+		if ('IdentityCanisterNotConfigured' in e)
+			return 'Identity canister not configured. Run /admin/bootstrap.';
+		if ('AuditCanisterNotConfigured' in e)
+			return 'Audit canister not configured. Run /admin/bootstrap.';
+		if ('UpstreamFailed' in e) return `Upstream call failed: ${String(e.UpstreamFailed)}.`;
 	}
 	return err instanceof Error ? err.message : 'Unknown error';
 }
-
-// Re-exports so route files don't need to import these from format.ts directly.
-export type { AuditEntry, AuditAction, Role, KycStatus, TradeIdeaStatus, AccessPurpose };

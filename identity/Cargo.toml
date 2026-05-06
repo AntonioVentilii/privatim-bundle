@@ -1,5 +1,5 @@
 [package]
-name = "app_backend"
+name = "identity"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,7 +10,6 @@ crate-type = ["cdylib"]
 candid = "0.10"
 ic-cdk = "0.19"
 serde = { version = "1", features = ["derive"] }
-sha2 = "0.10"
 
 [profile.release]
 opt-level = "z"

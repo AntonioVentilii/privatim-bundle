@@ -33,11 +33,13 @@ type AssistantError = variant {
   Unauthorized;
   NotFound;
   BackendUnreachable : text;
+  NotConfigured : text;
 };
 
 service : () -> {
   whoami : () -> (principal) query;
-  get_app_backend_principal : () -> (opt principal) query;
-  set_app_backend : (principal) -> (variant { Ok; Err : AssistantError });
+  config : () -> (opt principal, opt principal) query;
+  set_data_canister : (principal) -> (variant { Ok; Err : AssistantError });
+  set_audit_canister : (principal) -> (variant { Ok; Err : AssistantError });
   ask : (AssistantRequest) -> (variant { Ok : AssistantResponse; Err : AssistantError });
 }

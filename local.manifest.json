@@ -2,21 +2,29 @@
 	"manifest_version": 1,
 	"name": "Privatim",
 	"short_name": "Sovereign AI for private banking",
-	"application_version": "0.1.0",
-	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Designed for Swiss private banks where client data must not leave the bank's compute.",
+	"application_version": "0.2.0",
+	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Five-canister architecture: identity, audit, data, ai_assistant, web_frontend.",
 	"main_canister": "web_frontend",
 
 	"canisters": {
-		"app_backend": {
+		"identity": {
 			"dependencies": [],
 			"init_arg": { "arg": "()", "format": "candid" }
 		},
+		"audit": {
+			"dependencies": ["identity"],
+			"init_arg": { "arg": "()", "format": "candid" }
+		},
+		"data": {
+			"dependencies": ["identity", "audit"],
+			"init_arg": { "arg": "()", "format": "candid" }
+		},
 		"ai_assistant": {
-			"dependencies": ["app_backend"],
+			"dependencies": ["identity", "audit", "data"],
 			"init_arg": { "arg": "()", "format": "candid" }
 		},
 		"web_frontend": {
-			"dependencies": ["app_backend", "ai_assistant"],
+			"dependencies": ["identity", "audit", "data", "ai_assistant"],
 			"env_variables": {
 				"PUBLIC_II_CANISTER_ID": "uqzsh-gqaaa-aaaaq-qaada-cai"
 			},
@@ -26,12 +34,9 @@
 
 	"icons": [
 		{ "src": "./icons/app.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-		{
-			"src": "./icons/app_backend.svg",
-			"sizes": "any",
-			"type": "image/svg+xml",
-			"purpose": "any"
-		},
+		{ "src": "./icons/identity.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+		{ "src": "./icons/audit.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+		{ "src": "./icons/data.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
 		{
 			"src": "./icons/ai_assistant.svg",
 			"sizes": "any",

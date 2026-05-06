@@ -40,7 +40,8 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 	const AssistantError = IDL.Variant({
 		Unauthorized: IDL.Null,
 		NotFound: IDL.Null,
-		BackendUnreachable: IDL.Text
+		BackendUnreachable: IDL.Text,
+		NotConfigured: IDL.Text
 	});
 
 	const ResultUnit = IDL.Variant({ Ok: IDL.Null, Err: AssistantError });
@@ -48,8 +49,9 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 
 	return IDL.Service({
 		whoami: IDL.Func([], [IDL.Principal], ['query']),
-		get_app_backend_principal: IDL.Func([], [IDL.Opt(IDL.Principal)], ['query']),
-		set_app_backend: IDL.Func([IDL.Principal], [ResultUnit], []),
+		config: IDL.Func([], [IDL.Opt(IDL.Principal), IDL.Opt(IDL.Principal)], ['query']),
+		set_data_canister: IDL.Func([IDL.Principal], [ResultUnit], []),
+		set_audit_canister: IDL.Func([IDL.Principal], [ResultUnit], []),
 		ask: IDL.Func([AssistantRequest], [ResultResponse], [])
 	});
 };

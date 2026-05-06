@@ -38,14 +38,16 @@ export interface AssistantResponse {
 export type AssistantError =
 	| { Unauthorized: null }
 	| { NotFound: null }
-	| { BackendUnreachable: string };
+	| { BackendUnreachable: string }
+	| { NotConfigured: string };
 
 export type ResultUnit = { Ok: null } | { Err: AssistantError };
 export type ResultResponse = { Ok: AssistantResponse } | { Err: AssistantError };
 
 export interface AiAssistantService {
 	whoami: ActorMethod<[], Principal>;
-	get_app_backend_principal: ActorMethod<[], [] | [Principal]>;
-	set_app_backend: ActorMethod<[Principal], ResultUnit>;
+	config: ActorMethod<[], [[] | [Principal], [] | [Principal]]>;
+	set_data_canister: ActorMethod<[Principal], ResultUnit>;
+	set_audit_canister: ActorMethod<[Principal], ResultUnit>;
 	ask: ActorMethod<[AssistantRequest], ResultResponse>;
 }

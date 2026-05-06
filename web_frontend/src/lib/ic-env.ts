@@ -1,12 +1,8 @@
 /**
- * Reads the asset canister's `ic_env` cookie at runtime — the Cloud Engines
- * installer plants it on every HTML response. Falls back to `VITE_*`
- * build-time vars in dev (when no cookie is present).
- *
- * We deliberately do NOT use `safeGetCanisterEnv()` from the SDK; it rejects
- * the whole env when `ic_root_key` is missing, and the installer doesn't
- * populate that key. We pick up canister IDs from the cookie ourselves and
- * fetch the root key separately via `agent.fetchRootKey()`.
+ * Reads canister IDs from the asset canister's `ic_env` cookie at runtime,
+ * falling back to `VITE_*` build-time vars in dev (when the cookie isn't
+ * present). Five canisters in this bundle: identity, audit, data,
+ * ai_assistant, plus the asset canister serving the SPA.
  */
 function readCookie(): Record<string, string> {
 	try {
@@ -35,25 +31,21 @@ function env(): Record<string, string> {
 	return _cache;
 }
 
-export function getAppBackendId(): string {
-	const fromCookie = env()['PUBLIC_CANISTER_ID:app_backend'];
+function lookup(name: string, viteName: string): string {
+	const fromCookie = env()[`PUBLIC_CANISTER_ID:${name}`];
 	if (fromCookie) return fromCookie;
-	const fromBuild = import.meta.env.VITE_CANISTER_ID_APP_BACKEND;
+	const fromBuild = (import.meta.env as Record<string, string | undefined>)[viteName];
 	if (fromBuild) return fromBuild;
 	throw new Error(
-		'Missing app_backend canister id: neither ic_env cookie nor VITE_CANISTER_ID_APP_BACKEND is set'
+		`Missing ${name} canister id: neither ic_env cookie nor ${viteName} is set`
 	);
 }
 
-export function getAiAssistantId(): string {
-	const fromCookie = env()['PUBLIC_CANISTER_ID:ai_assistant'];
-	if (fromCookie) return fromCookie;
-	const fromBuild = import.meta.env.VITE_CANISTER_ID_AI_ASSISTANT;
-	if (fromBuild) return fromBuild;
-	throw new Error(
-		'Missing ai_assistant canister id: neither ic_env cookie nor VITE_CANISTER_ID_AI_ASSISTANT is set'
-	);
-}
+export const getIdentityId = () => lookup('identity', 'VITE_CANISTER_ID_IDENTITY');
+export const getAuditId = () => lookup('audit', 'VITE_CANISTER_ID_AUDIT');
+export const getDataId = () => lookup('data', 'VITE_CANISTER_ID_DATA');
+export const getAiAssistantId = () =>
+	lookup('ai_assistant', 'VITE_CANISTER_ID_AI_ASSISTANT');
 
 const II_DEFAULT = 'uqzsh-gqaaa-aaaaq-qaada-cai';
 

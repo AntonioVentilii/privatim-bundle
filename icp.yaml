@@ -1,6 +1,10 @@
 # yaml-language-server: $schema=https://github.com/dfinity/icp-cli/raw/refs/tags/v0.2.0/docs/schemas/icp-yaml-schema.json
 
+# Canister deploy / build order. The asset canister depends on every backend
+# canister so the installer's `ic_env` cookie injection picks them all up.
 canisters:
-  - app_backend
+  - identity
+  - audit
+  - data
   - ai_assistant
   - web_frontend

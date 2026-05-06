@@ -5,7 +5,7 @@
 	import type {
 		AuditHead,
 		ComplianceExport
-	} from '../../../declarations/app_backend.types';
+	} from '../../../declarations/audit.types';
 
 	let head = $state<AuditHead | null>(null);
 	let fromSeq = $state('0');
@@ -16,20 +16,20 @@
 
 	$effect(() => {
 		void auth.state.principal;
-		if (!auth.state.app) return;
-		auth.state.app.audit_head().then((h) => {
+		if (!auth.state.backends || !auth.state.authenticated) return;
+		auth.state.backends.audit.audit_head().then((h) => {
 			head = h;
 			if (!toSeq) toSeq = h.seq.toString();
 		});
 	});
 
 	async function doExport() {
-		const app = auth.state.app;
-		if (!app) return;
+		const audit = auth.state.backends?.audit;
+		if (!audit) return;
 		errMsg = null;
 		loading = true;
 		try {
-			const res = await app.signed_audit_export(BigInt(fromSeq || '0'), BigInt(toSeq || '0'));
+			const res = await audit.signed_audit_export(BigInt(fromSeq || '0'), BigInt(toSeq || '0'));
 			if ('Err' in res) {
 				errMsg = appErrorMessage(res.Err);
 				return;

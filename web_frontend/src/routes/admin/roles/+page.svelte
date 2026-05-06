@@ -2,34 +2,27 @@
 	import { auth } from '$lib/auth.svelte';
 	import { Principal } from '@dfinity/principal';
 	import { appErrorMessage } from '$lib/audit';
-	import type { Role } from '../../../declarations/app_backend.types';
+	import type { Role } from '../../../declarations/identity.types';
 
 	let granteeText = $state('');
 	let role = $state<'Advisor' | 'Compliance' | 'Admin'>('Advisor');
-	let aiPrincipalText = $state('');
+	let assignClient = $state('');
 	let msg = $state<string | null>(null);
-	let aiPrincipalCurrent = $state<string | null>(null);
-
-	$effect(() => {
-		void auth.state.principal;
-		if (!auth.state.ai) return;
-		auth.state.ai.whoami().then((p) => (aiPrincipalCurrent = p.toText()));
-	});
 
 	function asRole(r: 'Advisor' | 'Compliance' | 'Admin'): Role {
 		return { [r]: null } as Role;
 	}
 
-	async function grant(action: 'grant' | 'revoke') {
-		const app = auth.state.app;
-		if (!app) return;
+	async function grantOrRevoke(action: 'grant' | 'revoke') {
+		const id = auth.state.backends?.identity;
+		if (!id) return;
 		msg = null;
 		try {
 			const p = Principal.fromText(granteeText.trim());
 			const res =
 				action === 'grant'
-					? await app.grant_role(p, asRole(role))
-					: await app.revoke_role(p, asRole(role));
+					? await id.grant_role(p, asRole(role))
+					: await id.revoke_role(p, asRole(role));
 			if ('Err' in res) {
 				msg = appErrorMessage(res.Err);
 				return;
@@ -42,18 +35,19 @@
 		}
 	}
 
-	async function admitAi() {
-		const app = auth.state.app;
-		if (!app) return;
+	async function assignClientToMe() {
+		const id = auth.state.backends?.identity;
+		const p = auth.state.principal;
+		if (!id || !p) return;
 		msg = null;
 		try {
-			const p = Principal.fromText(aiPrincipalText.trim() || aiPrincipalCurrent || '');
-			const res = await app.admit_ai_assistant(p);
+			const cid = BigInt(assignClient.trim());
+			const res = await id.assign_client(p, cid);
 			if ('Err' in res) {
 				msg = appErrorMessage(res.Err);
 				return;
 			}
-			msg = `Admitted ai_assistant principal ${p.toText()}`;
+			msg = `Assigned client #${cid.toString()} to you`;
 		} catch (err) {
 			msg = appErrorMessage(err);
 		}
@@ -65,16 +59,19 @@
 		<h1 class="font-serif text-3xl font-black tracking-tight">Roles</h1>
 		<p class="ink-muted text-sm">
 			Admin only. Three roles: <code>Advisor</code> (sees own clients),
-			<code>Compliance</code> (sees full audit log, runs exports),
-			<code>Admin</code> (can grant roles + reassign clients).
+			<code>Compliance</code> (sees full audit log + runs exports),
+			<code>Admin</code> (grants roles + assigns clients).
+		</p>
+		<p class="ink-muted text-xs">
+			One-shot wiring of inter-canister principals lives at
+			<a href="/admin/bootstrap" class="underline">/admin/bootstrap</a>.
 		</p>
 	</header>
 
 	{#if !auth.hasRole('Admin')}
 		<div class="surface rounded p-8 text-center">
 			<p class="ink-muted text-sm">
-				Admin role required. The first authenticated principal becomes Admin automatically; ask
-				them to grant you the role here if you signed in second.
+				Admin role required. The first authenticated principal becomes Admin automatically.
 			</p>
 		</div>
 	{:else}
@@ -103,7 +100,7 @@
 			<div class="flex gap-2">
 				<button
 					type="button"
-					onclick={() => grant('grant')}
+					onclick={() => grantOrRevoke('grant')}
 					class="rounded px-4 py-2 text-sm font-bold text-[var(--color-paper)]"
 					style="background: var(--color-burgundy);"
 				>
@@ -111,7 +108,7 @@
 				</button>
 				<button
 					type="button"
-					onclick={() => grant('revoke')}
+					onclick={() => grantOrRevoke('revoke')}
 					class="surface ink-muted hover:ink rounded px-4 py-2 text-sm"
 				>
 					Revoke
@@ -120,28 +117,26 @@
 		</div>
 
 		<div class="surface space-y-3 rounded p-6">
-			<h2 class="font-serif text-lg font-black">Admit ai_assistant</h2>
+			<h2 class="font-serif text-lg font-black">Assign a client to yourself</h2>
 			<p class="ink-muted text-sm">
-				Grants the AI canister the Admin role on app_backend so it can write
-				`AssistantQueried` / `AssistantResponded` audit entries on behalf of users. Run this
-				once after deploying both canisters.
+				Demo helper. Seeded clients are owned by synthetic advisor principals; this gives
+				you visibility on a specific client by client_id.
 			</p>
-			<div class="ink-muted text-xs">
-				ai_assistant principal:
-				<span class="font-mono">{aiPrincipalCurrent ?? '—'}</span>
-			</div>
-			<input
-				type="text"
-				bind:value={aiPrincipalText}
-				placeholder={aiPrincipalCurrent ?? 'principal of ai_assistant canister'}
-				class="rule-line surface w-full rounded border px-3 py-2 font-mono text-xs"
-			/>
+			<label class="block">
+				<span class="ink-muted text-xs tracking-[0.18em] uppercase">Client ID</span>
+				<input
+					type="number"
+					bind:value={assignClient}
+					placeholder="0"
+					class="rule-line surface mt-1 w-full rounded border px-3 py-2 text-sm"
+				/>
+			</label>
 			<button
 				type="button"
-				onclick={admitAi}
+				onclick={assignClientToMe}
 				class="surface ink-muted hover:ink rounded px-4 py-2 text-sm"
 			>
-				Admit ai_assistant
+				Assign to me
 			</button>
 		</div>
 

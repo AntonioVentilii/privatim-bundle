@@ -2,21 +2,29 @@
 	"manifest_version": 1,
 	"name": "Privatim",
 	"short_name": "Sovereign AI for private banking",
-	"application_version": "0.1.0",
-	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Designed for Swiss private banks where client data must not leave the bank's compute. Every read, write, and AI interaction is appended to a hash-chained on-chain audit log that any compliance officer or regulator can re-verify in their own browser.",
+	"application_version": "0.2.0",
+	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Five-canister architecture: identity (roles), audit (hash-chained log + signed compliance export), data (clients + portfolios + meetings + trade ideas), ai_assistant (stub LLM, real on-engine LLM v2), web_frontend (SPA). Every read, write, and AI interaction is recorded on-chain in a hash-chained log that any compliance officer or regulator can re-verify in their browser.",
 	"main_canister": "web_frontend",
 
 	"canisters": {
-		"app_backend": {
+		"identity": {
 			"dependencies": [],
 			"init_arg": { "arg": "()", "format": "candid" }
 		},
+		"audit": {
+			"dependencies": ["identity"],
+			"init_arg": { "arg": "()", "format": "candid" }
+		},
+		"data": {
+			"dependencies": ["identity", "audit"],
+			"init_arg": { "arg": "()", "format": "candid" }
+		},
 		"ai_assistant": {
-			"dependencies": ["app_backend"],
+			"dependencies": ["identity", "audit", "data"],
 			"init_arg": { "arg": "()", "format": "candid" }
 		},
 		"web_frontend": {
-			"dependencies": ["app_backend", "ai_assistant"],
+			"dependencies": ["identity", "audit", "data", "ai_assistant"],
 			"env_variables": {
 				"PUBLIC_II_CANISTER_ID": "s24we-diaaa-aaaaa-aaaka-cai"
 			},
@@ -26,12 +34,9 @@
 
 	"icons": [
 		{ "src": "./icons/app.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-		{
-			"src": "./icons/app_backend.svg",
-			"sizes": "any",
-			"type": "image/svg+xml",
-			"purpose": "any"
-		},
+		{ "src": "./icons/identity.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+		{ "src": "./icons/audit.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+		{ "src": "./icons/data.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
 		{
 			"src": "./icons/ai_assistant.svg",
 			"sizes": "any",

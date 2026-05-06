@@ -1,0 +1,42 @@
+type Role = variant { Advisor; Compliance; Admin };
+
+type WhoAmI = record {
+  principal : principal;
+  roles : vec Role;
+  assigned_clients : vec nat64;
+};
+
+type IdentityError = variant { Unauthorized; AlreadyBootstrapped };
+
+type IdentityEventKind = variant {
+  AdminBootstrapped;
+  RoleGranted : record { grantee : principal; role : Role };
+  RoleRevoked : record { grantee : principal; role : Role };
+  ClientAssigned : record { advisor : principal; client_id : nat64 };
+  ClientUnassigned : record { advisor : principal; client_id : nat64 };
+  AiAssistantAdmitted : record { ai : principal };
+};
+
+type IdentityEvent = record {
+  ts_ns : nat64;
+  by : principal;
+  kind : IdentityEventKind;
+};
+
+service : () -> {
+  whoami : () -> (WhoAmI) query;
+  roles_of : (principal) -> (vec Role) query;
+  has_role : (principal, Role) -> (bool) query;
+  is_assigned : (principal, nat64) -> (bool) query;
+  assigned_clients : (principal) -> (vec nat64) query;
+  ai_assistant_principal : () -> (opt principal) query;
+  admin_bootstrapped : () -> (bool) query;
+  recent_events : (nat64) -> (vec IdentityEvent) query;
+
+  bootstrap_admin : () -> (variant { Ok; Err : IdentityError });
+  grant_role : (principal, Role) -> (variant { Ok; Err : IdentityError });
+  revoke_role : (principal, Role) -> (variant { Ok; Err : IdentityError });
+  assign_client : (principal, nat64) -> (variant { Ok; Err : IdentityError });
+  unassign_client : (principal, nat64) -> (variant { Ok; Err : IdentityError });
+  admit_ai_assistant : (principal) -> (variant { Ok; Err : IdentityError });
+}

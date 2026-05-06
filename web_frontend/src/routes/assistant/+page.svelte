@@ -7,7 +7,7 @@
 		AssistantIntent,
 		AssistantResponse
 	} from '../../declarations/ai_assistant.types';
-	import type { Client } from '../../declarations/app_backend.types';
+	import type { Client } from '../../declarations/data.types';
 
 	const intents: { value: keyof AssistantIntent | string; label: string; needsClient: boolean }[] = [
 		{ value: 'PortfolioOverview', label: 'Portfolio overview', needsClient: true },
@@ -30,14 +30,14 @@
 
 	$effect(() => {
 		void auth.state.principal;
-		if (!auth.state.app) return;
-		auth.state.app.list_clients().then((cs) => (clients = cs));
+		if (!auth.state.backends || !auth.state.authenticated) return;
+		auth.state.backends.data.list_clients().then((cs) => (clients = cs));
 	});
 
 	const currentIntent = $derived(intents.find((i) => i.value === intentValue));
 
 	async function ask() {
-		const ai = auth.state.ai;
+		const ai = auth.state.backends?.ai;
 		if (!ai) return;
 		errMsg = null;
 		response = null;

@@ -15,7 +15,7 @@
 		Meeting,
 		Portfolio,
 		TradeIdea
-	} from '../../../declarations/app_backend.types';
+	} from '../../../declarations/data.types';
 
 	let client = $state<Client | null>(null);
 	let portfolios = $state<Portfolio[]>([]);
@@ -27,12 +27,12 @@
 	const clientId = $derived(BigInt(page.params.id ?? '0'));
 
 	async function load() {
-		const app = auth.state.app;
-		if (!app) return;
+		const b = auth.state.backends;
+		if (!b) return;
 		loading = true;
 		errMsg = null;
 		try {
-			const c = await app.get_client(clientId);
+			const c = await b.data.get_client(clientId);
 			if ('Err' in c) {
 				errMsg = appErrorMessage(c.Err);
 				return;
@@ -40,18 +40,17 @@
 			client = c.Ok;
 			const ps: Portfolio[] = [];
 			for (const pid of client.portfolio_ids) {
-				const p = await app.get_portfolio(pid);
+				const p = await b.data.get_portfolio(pid);
 				if ('Ok' in p) ps.push(p.Ok);
 			}
 			portfolios = ps;
 			const [ms, ts] = await Promise.all([
-				app.list_meetings(clientId),
-				app.list_trade_ideas(clientId)
+				b.data.list_meetings(clientId),
+				b.data.list_trade_ideas(clientId)
 			]);
 			if ('Ok' in ms) meetings = ms.Ok;
 			if ('Ok' in ts) tradeIdeas = ts.Ok;
-			// Audit the access. Non-blocking.
-			app.record_client_access(clientId, { ManualReview: null }).catch(() => {});
+			b.data.record_client_access(clientId, { ManualReview: null }).catch(() => {});
 		} finally {
 			loading = false;
 		}
@@ -60,7 +59,7 @@
 	$effect(() => {
 		void clientId;
 		void auth.state.principal;
-		if (auth.state.app) load();
+		if (auth.state.backends && auth.state.authenticated) load();
 	});
 
 	function portfolioMtmChf(p: Portfolio): bigint {

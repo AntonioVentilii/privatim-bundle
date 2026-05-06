@@ -2,7 +2,7 @@
 	import { auth } from '$lib/auth.svelte';
 	import { describeAction, verifyChain, type ChainVerification } from '$lib/audit';
 	import { formatDateTime, shortPrincipal } from '$lib/format';
-	import type { AuditEntry } from '../../declarations/app_backend.types';
+	import type { AuditEntry } from '../../declarations/audit.types';
 
 	let entries = $state<AuditEntry[]>([]);
 	let loading = $state(true);
@@ -12,11 +12,11 @@
 	let verifying = $state(false);
 
 	async function loadInitial() {
-		const app = auth.state.app;
-		if (!app) return;
+		const audit = auth.state.backends?.audit;
+		if (!audit) return;
 		loading = true;
 		try {
-			const page = await app.audit_log_page([], 50n);
+			const page = await audit.audit_log_page([], 50n);
 			entries = page.entries;
 			total = page.total;
 			nextCursor = page.next_cursor[0] ?? null;
@@ -27,9 +27,9 @@
 	}
 
 	async function loadMore() {
-		const app = auth.state.app;
-		if (!app || nextCursor === null) return;
-		const page = await app.audit_log_page([nextCursor], 50n);
+		const audit = auth.state.backends?.audit;
+		if (!audit || nextCursor === null) return;
+		const page = await audit.audit_log_page([nextCursor], 50n);
 		entries = [...entries, ...page.entries];
 		total = page.total;
 		nextCursor = page.next_cursor[0] ?? null;
@@ -48,7 +48,7 @@
 	$effect(() => {
 		void auth.state.principal;
 		void auth.state.ready;
-		if (auth.state.app && entries.length === 0) loadInitial();
+		if (auth.state.backends && auth.state.authenticated && entries.length === 0) loadInitial();
 	});
 </script>
 

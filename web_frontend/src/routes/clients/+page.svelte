@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte';
 	import { formatChf, variantKey } from '$lib/format';
-	import type { Client } from '../../declarations/app_backend.types';
+	import type { Client } from '../../declarations/data.types';
 
 	let clients = $state<Client[]>([]);
 	let loading = $state(true);
 	let q = $state('');
 
 	async function load() {
-		const app = auth.state.app;
-		if (!app) return;
+		const b = auth.state.backends;
+		if (!b) return;
 		loading = true;
 		try {
-			clients = await app.list_clients();
+			clients = await b.data.list_clients();
 			clients.sort((a, b) => Number(b.aum_chf - a.aum_chf));
 		} finally {
 			loading = false;
@@ -21,7 +21,7 @@
 
 	$effect(() => {
 		void auth.state.principal;
-		if (auth.state.app) load();
+		if (auth.state.backends && auth.state.authenticated) load();
 	});
 
 	const filtered = $derived(
@@ -37,8 +37,10 @@
 	);
 
 	function kycColor(c: Client): string {
-		if ('Approved' in c.kyc_status) return 'background: oklch(0.92 0.06 145); color: var(--color-good);';
-		if ('Pending' in c.kyc_status) return 'background: oklch(0.95 0.06 65); color: var(--color-warn);';
+		if ('Approved' in c.kyc_status)
+			return 'background: oklch(0.92 0.06 145); color: var(--color-good);';
+		if ('Pending' in c.kyc_status)
+			return 'background: oklch(0.95 0.06 65); color: var(--color-warn);';
 		return 'background: oklch(0.94 0.05 25); color: var(--color-bad);';
 	}
 </script>

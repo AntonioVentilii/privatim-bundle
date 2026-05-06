@@ -1,0 +1,76 @@
+type Role = variant { Advisor; Compliance; Admin };
+type KycStatus = variant { Pending; Approved; Expired };
+type TradeIdeaStatus = variant { Draft; Approved; Rejected; Executed };
+type AccessPurpose = variant {
+  ManualReview;
+  TradeIdeaPreparation;
+  AssistantQuery;
+  ComplianceReview;
+  KycRefresh;
+};
+
+type AuditAction = variant {
+  ClientCreated : record { client_id : nat64 };
+  ClientKycUpdated : record { client_id : nat64; status : KycStatus };
+  ClientReassigned : record { client_id : nat64; to : principal };
+  MeetingAdded : record { client_id : nat64; meeting_id : nat64 };
+  TradeIdeaProposed : record { client_id : nat64; trade_idea_id : nat64 };
+  TradeIdeaStatusChanged : record { trade_idea_id : nat64; status : TradeIdeaStatus };
+  RoleGranted : record { grantee : principal; role : Role };
+  RoleRevoked : record { grantee : principal; role : Role };
+  ClientAssigned : record { advisor : principal; client_id : nat64 };
+  ClientUnassigned : record { advisor : principal; client_id : nat64 };
+  AdminBootstrapped : record { admin : principal };
+  AiAssistantAdmitted : record { ai : principal };
+  ClientAccessed : record { client_id : nat64; purpose : AccessPurpose };
+  AssistantQueried : record { client_id : opt nat64; intent : text };
+  AssistantResponded : record { client_id : opt nat64; intent : text; citations : vec nat64 };
+  ComplianceExport : record { from_seq : nat64; to_seq : nat64 };
+};
+
+type AuditEntry = record {
+  seq : nat64;
+  prev_hash : text;
+  hash : text;
+  ts_ns : nat64;
+  caller : principal;
+  action : AuditAction;
+};
+
+type AuditPage = record {
+  entries : vec AuditEntry;
+  next_cursor : opt nat64;
+  total : nat64;
+};
+
+type AuditHead = record { seq : nat64; hash : text };
+
+type ComplianceExport = record {
+  exported_at_ns : nat64;
+  exporter : principal;
+  from_seq : nat64;
+  to_seq : nat64;
+  head_hash : text;
+  entries : vec AuditEntry;
+};
+
+type AuditError = variant {
+  Unauthorized;
+  InvalidArgument : text;
+  IdentityCanisterNotConfigured;
+};
+
+service : () -> {
+  audit_head : () -> (AuditHead) query;
+  total_entries : () -> (nat64) query;
+  audit_log_page : (opt nat64, nat64) -> (AuditPage) composite_query;
+  writers : () -> (vec principal) query;
+  identity_canister : () -> (opt principal) query;
+
+  admit_writer : (principal) -> (variant { Ok; Err : AuditError });
+  revoke_writer : (principal) -> (variant { Ok; Err : AuditError });
+  set_identity_canister : (principal) -> (variant { Ok; Err : AuditError });
+  record : (AuditAction, principal) -> (variant { Ok : nat64; Err : AuditError });
+  signed_audit_export : (nat64, nat64) -> (variant { Ok : ComplianceExport; Err : AuditError });
+  reset_demo : () -> (variant { Ok : nat64; Err : AuditError });
+}

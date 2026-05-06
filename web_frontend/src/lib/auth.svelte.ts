@@ -1,10 +1,9 @@
 import { AuthClient } from '@dfinity/auth-client';
 import type { Identity } from '@dfinity/agent';
 import { Principal } from '@dfinity/principal';
-import { buildBackends } from './actor';
+import { buildBackends, type Backends } from './actor';
 import { getIdentityProviderUrl } from './ii';
-import type { AppBackendService, Role } from '../declarations/app_backend.types';
-import type { AiAssistantService } from '../declarations/ai_assistant.types';
+import type { Role } from '../declarations/identity.types';
 
 const ONE_DAY_NS = BigInt(24) * BigInt(3_600_000_000_000);
 const SESSION_NS = BigInt(30) * ONE_DAY_NS;
@@ -14,8 +13,7 @@ export interface AuthState {
 	authenticated: boolean;
 	identity: Identity | null;
 	principal: Principal | null;
-	app: AppBackendService | null;
-	ai: AiAssistantService | null;
+	backends: Backends | null;
 	roles: Role[];
 }
 
@@ -25,16 +23,15 @@ function createAuth() {
 		authenticated: false,
 		identity: null,
 		principal: null,
-		app: null,
-		ai: null,
+		backends: null,
 		roles: []
 	});
 
 	let client: AuthClient | null = null;
 
-	async function loadRoles(app: AppBackendService) {
+	async function loadRoles(b: Backends) {
 		try {
-			const me = await app.whoami();
+			const me = await b.identity.whoami();
 			state.roles = me.roles;
 		} catch {
 			state.roles = [];
@@ -42,13 +39,20 @@ function createAuth() {
 	}
 
 	async function applyIdentity(identity: Identity) {
-		const { app, ai } = await buildBackends(identity);
+		const backends = await buildBackends(identity);
 		state.identity = identity;
 		state.principal = identity.getPrincipal();
 		state.authenticated = !state.principal.isAnonymous();
-		state.app = app;
-		state.ai = ai;
-		await loadRoles(app);
+		state.backends = backends;
+		await loadRoles(backends);
+		// First sign-in: try to claim Admin if nobody has yet. Idempotent
+		// — fails silently if already bootstrapped.
+		try {
+			await backends.identity.bootstrap_admin();
+			await loadRoles(backends);
+		} catch {
+			/* ignore */
+		}
 	}
 
 	async function init() {
@@ -58,9 +62,8 @@ function createAuth() {
 		if (isAuthed) {
 			await applyIdentity(client.getIdentity());
 		} else {
-			const { app, ai } = await buildBackends();
-			state.app = app;
-			state.ai = ai;
+			const backends = await buildBackends();
+			state.backends = backends;
 			state.identity = null;
 			state.principal = null;
 			state.authenticated = false;
@@ -86,12 +89,11 @@ function createAuth() {
 	async function logout(): Promise<void> {
 		if (!client) return;
 		await client.logout();
-		const { app, ai } = await buildBackends();
+		const backends = await buildBackends();
 		state.identity = null;
 		state.principal = null;
 		state.authenticated = false;
-		state.app = app;
-		state.ai = ai;
+		state.backends = backends;
 		state.roles = [];
 	}
 
