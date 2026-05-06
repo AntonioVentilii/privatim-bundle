@@ -81,10 +81,7 @@ export interface AuditService {
 	audit_head: ActorMethod<[], AuditHead>;
 	total_entries: ActorMethod<[], bigint>;
 	audit_log_page: ActorMethod<[[] | [bigint], bigint], AuditPage>;
-	writers: ActorMethod<[], Principal[]>;
 	identity_canister: ActorMethod<[], [] | [Principal]>;
-	admit_writer: ActorMethod<[Principal], AuditResult>;
-	revoke_writer: ActorMethod<[Principal], AuditResult>;
 	set_identity_canister: ActorMethod<[Principal], AuditResult>;
 	append: ActorMethod<[AuditAction, Principal], AuditResultNat64>;
 	signed_audit_export: ActorMethod<[bigint, bigint], AuditResultExport>;

@@ -990,10 +990,23 @@ fn seed_demo(state: &mut State) {
 
 // ───────────────────── lifecycle ─────────────────────
 
+fn read_principal_env(name: &str) -> Option<Principal> {
+    if !ic_cdk::api::env_var_name_exists(name) {
+        return None;
+    }
+    Principal::from_text(ic_cdk::api::env_var_value(name)).ok()
+}
+
 #[init]
 fn init() {
     STATE.with(|s| {
         let mut st = s.borrow_mut();
+        if let Some(p) = read_principal_env("PUBLIC_CANISTER_ID:identity") {
+            st.identity_canister = Some(p);
+        }
+        if let Some(p) = read_principal_env("PUBLIC_CANISTER_ID:audit") {
+            st.audit_canister = Some(p);
+        }
         seed_demo(&mut st);
     });
 }

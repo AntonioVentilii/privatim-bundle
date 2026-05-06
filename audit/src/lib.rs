@@ -25,7 +25,6 @@ use ic_cdk::{init, post_upgrade, pre_upgrade, query, update};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
-use std::collections::BTreeSet;
 
 const MAX_AUDIT_PAGE: u64 = 200;
 const MAX_INTENT_LEN: usize = 200;
@@ -135,9 +134,10 @@ pub type AuditResult<T> = Result<T, AuditError>;
 
 #[derive(Default, CandidType, Serialize, Deserialize)]
 struct State {
-    /// Principals allowed to call `record`. Set by controllers after deploy.
-    writers: BTreeSet<Principal>,
     /// Principal of the identity canister, used for role checks on reads.
+    /// Auto-populated in `init` from the `PUBLIC_CANISTER_ID:identity`
+    /// env var that the manifest's dependency declaration causes the
+    /// installer to inject.
     identity_canister: Option<Principal>,
     audit: Vec<AuditEntry>,
 }
@@ -235,8 +235,22 @@ async fn check_role(role: Role) -> AuditResult<bool> {
     Ok(res.0)
 }
 
+fn read_principal_env(name: &str) -> Option<Principal> {
+    if !ic_cdk::api::env_var_name_exists(name) {
+        return None;
+    }
+    Principal::from_text(ic_cdk::api::env_var_value(name)).ok()
+}
+
 #[init]
-fn init() {}
+fn init() {
+    STATE.with(|s| {
+        let mut st = s.borrow_mut();
+        if let Some(p) = read_principal_env("PUBLIC_CANISTER_ID:identity") {
+            st.identity_canister = Some(p);
+        }
+    });
+}
 
 #[pre_upgrade]
 fn pre_upgrade() {
@@ -259,30 +273,9 @@ fn post_upgrade() {
 
 // ───────────────────── config ─────────────────────
 
-#[update]
-fn admit_writer(p: Principal) -> AuditResult<()> {
-    let who = caller();
-    if !ic_cdk::api::is_controller(&who) {
-        return Err(AuditError::Unauthorized);
-    }
-    STATE.with(|s| {
-        s.borrow_mut().writers.insert(p);
-    });
-    Ok(())
-}
-
-#[update]
-fn revoke_writer(p: Principal) -> AuditResult<()> {
-    let who = caller();
-    if !ic_cdk::api::is_controller(&who) {
-        return Err(AuditError::Unauthorized);
-    }
-    STATE.with(|s| {
-        s.borrow_mut().writers.remove(&p);
-    });
-    Ok(())
-}
-
+/// Fallback setter for local dev where env-var injection isn't available
+/// (or for re-wiring after a manual reinstall). Auto-populated from
+/// `PUBLIC_CANISTER_ID:identity` env var in `init`. Controller-only.
 #[update]
 fn set_identity_canister(p: Principal) -> AuditResult<()> {
     let who = caller();
@@ -291,11 +284,6 @@ fn set_identity_canister(p: Principal) -> AuditResult<()> {
     }
     STATE.with(|s| s.borrow_mut().identity_canister = Some(p));
     Ok(())
-}
-
-#[query]
-fn writers() -> Vec<Principal> {
-    STATE.with(|s| s.borrow().writers.iter().copied().collect())
 }
 
 #[query]
@@ -381,12 +369,23 @@ async fn audit_log_page(cursor: Option<u64>, limit: u64) -> AuditPage {
 
 // ───────────────────── writes ─────────────────────
 
+/// Append a hash-chained entry to the audit log.
+///
+/// The audit chain accepts entries from any **authenticated** principal
+/// (anonymous callers are rejected). The entry records `caller` (the
+/// inter-canister caller — typically `data`, `ai_assistant`, or
+/// `identity`) and `on_behalf_of` (the user the action was taken for).
+/// Any chain consumer can filter by `caller` at read time to focus on
+/// trusted writers; "untrusted" writes still land in the chain but are
+/// trivially identifiable.
+///
+/// This is a deliberate showcase-grade simplification — production
+/// deployments would rate-limit per caller-canister and meter cycles
+/// per-write to prevent spam.
 #[update]
 fn append(action: AuditAction, on_behalf_of: Principal) -> AuditResult<u64> {
     let who = caller();
-    let allowed = STATE.with(|s| s.borrow().writers.contains(&who))
-        || ic_cdk::api::is_controller(&who);
-    if !allowed {
+    if who == Principal::anonymous() {
         return Err(AuditError::Unauthorized);
     }
     if let AuditAction::AssistantQueried { intent, .. }

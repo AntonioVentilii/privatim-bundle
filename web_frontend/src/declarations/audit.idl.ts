@@ -98,10 +98,7 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 			[AuditPage],
 			['composite_query']
 		),
-		writers: IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
 		identity_canister: IDL.Func([], [IDL.Opt(IDL.Principal)], ['query']),
-		admit_writer: IDL.Func([IDL.Principal], [Result], []),
-		revoke_writer: IDL.Func([IDL.Principal], [Result], []),
 		set_identity_canister: IDL.Func([IDL.Principal], [Result], []),
 		append: IDL.Func([AuditAction, IDL.Principal], [ResultNat64], []),
 		signed_audit_export: IDL.Func([IDL.Nat64, IDL.Nat64], [ResultExport], []),
