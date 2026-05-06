@@ -126,6 +126,26 @@ pub struct AuditHead {
     pub hash: String,
 }
 
+/// Subnet-certified audit-chain head. The `certificate` is a CBOR-encoded
+/// IC certificate whose threshold signature can be verified against the
+/// engine's root key (which the engine console / regulator can fetch
+/// independently). It commits to the canister's `certified_data`, which
+/// this canister sets to the latest chain-head SHA-256 on every
+/// `push_audit`.
+///
+/// The result: a regulator handed the compliance-export JSON can verify
+/// the entire chain head was at exactly this hash at the time of export
+/// without trusting Privatim, the engine creator, or DFINITY.
+#[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
+pub struct CertifiedHead {
+    pub seq: u64,
+    pub hash: String,
+    pub hash_bytes: Vec<u8>,
+    /// CBOR-encoded IC certificate. `None` if called from an update
+    /// context (only available in non-replicated query calls).
+    pub certificate: Option<Vec<u8>>,
+}
+
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
 pub struct ComplianceExport {
     pub exported_at_ns: u64,
@@ -218,7 +238,8 @@ fn push_audit(state: &mut State, caller: Principal, action: AuditAction) {
     hasher.update(caller.as_slice());
     hasher.update(action_repr(&action).as_bytes());
     hasher.update(prev_hash.as_bytes());
-    let hash = hex(&hasher.finalize());
+    let digest = hasher.finalize();
+    let hash = hex(&digest);
     state.audit.push(AuditEntry {
         seq,
         prev_hash,
@@ -227,6 +248,12 @@ fn push_audit(state: &mut State, caller: Principal, action: AuditAction) {
         caller,
         action,
     });
+    // Publish the latest hash bytes as the canister's certified data.
+    // The subnet then signs (via threshold key) any read-state proof that
+    // includes /canister/<id>/certified_data — letting the regulator
+    // verify the chain head against the engine root key without trusting
+    // the canister itself. See `certified_head()` query.
+    ic_cdk::api::set_certified_data(&digest);
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -326,6 +353,51 @@ fn audit_head() -> AuditHead {
             },
         }
     })
+}
+
+/// Returns the latest chain-head plus the IC certificate signing the
+/// canister's certified_data. Must be called as a query (not as an
+/// update) — otherwise `data_certificate()` returns `None`.
+#[query]
+fn certified_head() -> CertifiedHead {
+    let (seq, hash) = STATE.with(|s| {
+        let st = s.borrow();
+        match st.audit.last() {
+            Some(last) => (last.seq + 1, last.hash.clone()),
+            None => (0, String::new()),
+        }
+    });
+    let hash_bytes = hex_decode(&hash);
+    CertifiedHead {
+        seq,
+        hash,
+        hash_bytes,
+        certificate: ic_cdk::api::data_certificate(),
+    }
+}
+
+fn hex_decode(s: &str) -> Vec<u8> {
+    let bytes = s.as_bytes();
+    if bytes.len() % 2 != 0 {
+        return Vec::new();
+    }
+    bytes
+        .chunks(2)
+        .map(|c| {
+            let hi = hex_nibble(c[0]);
+            let lo = hex_nibble(c[1]);
+            (hi << 4) | lo
+        })
+        .collect()
+}
+
+fn hex_nibble(c: u8) -> u8 {
+    match c {
+        b'0'..=b'9' => c - b'0',
+        b'a'..=b'f' => 10 + c - b'a',
+        b'A'..=b'F' => 10 + c - b'A',
+        _ => 0,
+    }
 }
 
 #[query]

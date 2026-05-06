@@ -2,7 +2,7 @@
 	"manifest_version": 1,
 	"name": "Privatim",
 	"short_name": "Sovereign AI for private banking",
-	"application_version": "0.3.0",
+	"application_version": "0.3.1",
 	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Six-canister architecture: identity (roles), audit (hash-chained log + signed compliance export), data (clients + portfolios + meetings + trade ideas), documents (client-side AES-256-GCM encrypted KYC/contract blobs the engine creator with full controller access cannot decrypt), ai_assistant (stub LLM, real on-engine LLM v2), web_frontend (SPA). Every read, write, AI interaction, and document upload/access is recorded on-chain in a hash-chained log that any compliance officer or regulator can re-verify in their browser.",
 	"main_canister": "web_frontend",
 

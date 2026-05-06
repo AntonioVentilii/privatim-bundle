@@ -78,6 +78,13 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 
 	const AuditHead = IDL.Record({ seq: IDL.Nat64, hash: IDL.Text });
 
+	const CertifiedHead = IDL.Record({
+		seq: IDL.Nat64,
+		hash: IDL.Text,
+		hash_bytes: IDL.Vec(IDL.Nat8),
+		certificate: IDL.Opt(IDL.Vec(IDL.Nat8))
+	});
+
 	const ComplianceExport = IDL.Record({
 		exported_at_ns: IDL.Nat64,
 		exporter: IDL.Principal,
@@ -99,6 +106,7 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 
 	return IDL.Service({
 		audit_head: IDL.Func([], [AuditHead], ['query']),
+		certified_head: IDL.Func([], [CertifiedHead], ['query']),
 		total_entries: IDL.Func([], [IDL.Nat64], ['query']),
 		audit_log_page: IDL.Func(
 			[IDL.Opt(IDL.Nat64), IDL.Nat64],

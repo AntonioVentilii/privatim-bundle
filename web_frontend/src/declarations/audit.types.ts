@@ -68,6 +68,13 @@ export interface AuditHead {
 	hash: string;
 }
 
+export interface CertifiedHead {
+	seq: bigint;
+	hash: string;
+	hash_bytes: Uint8Array | number[];
+	certificate: [] | [Uint8Array | number[]];
+}
+
 export interface ComplianceExport {
 	exported_at_ns: bigint;
 	exporter: Principal;
@@ -88,6 +95,7 @@ export type AuditResultExport = { Ok: ComplianceExport } | { Err: AuditError };
 
 export interface AuditService {
 	audit_head: ActorMethod<[], AuditHead>;
+	certified_head: ActorMethod<[], CertifiedHead>;
 	total_entries: ActorMethod<[], bigint>;
 	audit_log_page: ActorMethod<[[] | [bigint], bigint], AuditPage>;
 	identity_canister: ActorMethod<[], [] | [Principal]>;

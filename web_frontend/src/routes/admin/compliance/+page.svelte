@@ -23,19 +23,51 @@
 		});
 	});
 
+	function bytesToBase64(bytes: Uint8Array | number[]): string {
+		const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+		let s = '';
+		for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]!);
+		return btoa(s);
+	}
+
 	async function doExport() {
 		const audit = auth.state.backends?.audit;
 		if (!audit) return;
 		errMsg = null;
 		loading = true;
 		try {
-			const res = await audit.signed_audit_export(BigInt(fromSeq || '0'), BigInt(toSeq || '0'));
+			// 1. Update call: records the ComplianceExport audit entry +
+			//    returns the slice. Chain head is published as certified
+			//    data after every push_audit.
+			const res = await audit.signed_audit_export(
+				BigInt(fromSeq || '0'),
+				BigInt(toSeq || '0')
+			);
 			if ('Err' in res) {
 				errMsg = appErrorMessage(res.Err);
 				return;
 			}
 			lastExport = res.Ok;
-			const blob = new Blob([JSON.stringify(serialise(res.Ok), null, 2)], {
+
+			// 2. Query call: fetches the same chain-head value with the
+			//    subnet's threshold signature attached. Must be a query —
+			//    `data_certificate()` returns None in update mode.
+			const ch = await audit.certified_head();
+
+			const certBytes = ch.certificate[0];
+			const payload = {
+				...(serialise(res.Ok) as Record<string, unknown>),
+				certified_head: {
+					seq: ch.seq.toString(),
+					hash: ch.hash,
+					hash_bytes_base64: bytesToBase64(ch.hash_bytes),
+					certificate_base64: certBytes ? bytesToBase64(certBytes) : null,
+					verifier_notes:
+						'`certificate_base64` is a CBOR-encoded IC certificate signed by the engine subnet threshold key. Verify it against the engine root key (https://<engine-domain>/api/v2/status returns the root_key) using @dfinity/agent.Certificate.create() or the IC HTTP gateway spec. The certificate commits to /canister/<this canister id>/certified_data, which equals `hash_bytes_base64`. If verified, the chain head was provably at this hash at export time without trusting Privatim, the engine creator, or DFINITY.'
+				}
+			};
+
+			const blob = new Blob([JSON.stringify(payload, null, 2)], {
 				type: 'application/json'
 			});
 			const url = URL.createObjectURL(blob);

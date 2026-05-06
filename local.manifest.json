@@ -2,7 +2,7 @@
 	"manifest_version": 1,
 	"name": "Privatim",
 	"short_name": "Sovereign AI for private banking",
-	"application_version": "0.3.0",
+	"application_version": "0.3.1",
 	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Six-canister architecture: identity, audit, data, documents (client-side encrypted), ai_assistant, web_frontend.",
 	"main_canister": "web_frontend",
 
