@@ -34,7 +34,8 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 		answer: IDL.Text,
 		citations: IDL.Vec(AssistantCitation),
 		audit_seq: IDL.Nat64,
-		model: IDL.Text
+		model: IDL.Text,
+		inference_ms: IDL.Nat64
 	});
 
 	const AssistantError = IDL.Variant({

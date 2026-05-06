@@ -62,6 +62,12 @@ pub struct AssistantResponse {
     pub citations: Vec<AssistantCitation>,
     pub audit_seq: u64,
     pub model: String,
+    /// Wall-clock time the canister spent computing the response, in
+    /// milliseconds. Includes inter-canister calls to `data` and
+    /// `audit`. Lets the UI render an honest "inferred in N ms" badge
+    /// alongside `model` — when this stub is replaced with a real LLM,
+    /// the same field carries the inference time of the model itself.
+    pub inference_ms: u64,
 }
 
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
@@ -351,6 +357,7 @@ async fn ask(req: AssistantRequest) -> AssistantResult<AssistantResponse> {
     if user == Principal::anonymous() {
         return Err(AssistantError::Unauthorized);
     }
+    let started_at_ns = ic_cdk::api::time();
     ensure_registered_with_identity().await;
     let data = get_data()?;
     let audit = get_audit()?;
@@ -397,12 +404,15 @@ async fn ask(req: AssistantRequest) -> AssistantResult<AssistantResponse> {
     .await?;
 
     let head = audit_head(audit).await?;
+    let elapsed_ns = ic_cdk::api::time().saturating_sub(started_at_ns);
+    let inference_ms = elapsed_ns / 1_000_000;
 
     Ok(AssistantResponse {
         answer,
         citations,
         audit_seq: head.seq,
         model: MODEL_TAG.into(),
+        inference_ms,
     })
 }
 

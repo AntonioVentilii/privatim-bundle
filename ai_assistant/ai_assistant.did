@@ -27,6 +27,7 @@ type AssistantResponse = record {
   citations : vec AssistantCitation;
   audit_seq : nat64;
   model : text;
+  inference_ms : nat64;
 };
 
 type AssistantError = variant {

@@ -33,6 +33,7 @@ export interface AssistantResponse {
 	citations: AssistantCitation[];
 	audit_seq: bigint;
 	model: string;
+	inference_ms: bigint;
 }
 
 export type AssistantError =
