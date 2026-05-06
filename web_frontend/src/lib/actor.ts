@@ -2,15 +2,18 @@ import { Actor, HttpAgent, type Identity } from '@dfinity/agent';
 import { idlFactory as identityIdl } from '../declarations/identity.idl';
 import { idlFactory as auditIdl } from '../declarations/audit.idl';
 import { idlFactory as dataIdl } from '../declarations/data.idl';
+import { idlFactory as documentsIdl } from '../declarations/documents.idl';
 import { idlFactory as aiIdl } from '../declarations/ai_assistant.idl';
 import type { IdentityService } from '../declarations/identity.types';
 import type { AuditService } from '../declarations/audit.types';
 import type { DataService } from '../declarations/data.types';
+import type { DocumentsService } from '../declarations/documents.types';
 import type { AiAssistantService } from '../declarations/ai_assistant.types';
 import {
 	getAiAssistantId,
 	getAuditId,
 	getDataId,
+	getDocumentsId,
 	getIdentityId
 } from './ic-env';
 
@@ -29,6 +32,7 @@ export interface Backends {
 	identity: IdentityService;
 	audit: AuditService;
 	data: DataService;
+	documents: DocumentsService;
 	ai: AiAssistantService;
 }
 
@@ -46,6 +50,10 @@ export async function buildBackends(identity?: Identity): Promise<Backends> {
 		data: Actor.createActor<DataService>(dataIdl, {
 			agent,
 			canisterId: getDataId()
+		}),
+		documents: Actor.createActor<DocumentsService>(documentsIdl, {
+			agent,
+			canisterId: getDocumentsId()
 		}),
 		ai: Actor.createActor<AiAssistantService>(aiIdl, {
 			agent,

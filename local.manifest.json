@@ -2,8 +2,8 @@
 	"manifest_version": 1,
 	"name": "Privatim",
 	"short_name": "Sovereign AI for private banking",
-	"application_version": "0.2.1",
-	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Five-canister architecture: identity, audit, data, ai_assistant, web_frontend.",
+	"application_version": "0.3.0",
+	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Six-canister architecture: identity, audit, data, documents (client-side encrypted), ai_assistant, web_frontend.",
 	"main_canister": "web_frontend",
 
 	"canisters": {
@@ -19,12 +19,16 @@
 			"dependencies": ["identity", "audit"],
 			"init_arg": { "arg": "()", "format": "candid" }
 		},
+		"documents": {
+			"dependencies": ["audit"],
+			"init_arg": { "arg": "()", "format": "candid" }
+		},
 		"ai_assistant": {
 			"dependencies": ["identity", "audit", "data"],
 			"init_arg": { "arg": "()", "format": "candid" }
 		},
 		"web_frontend": {
-			"dependencies": ["identity", "audit", "data", "ai_assistant"],
+			"dependencies": ["identity", "audit", "data", "documents", "ai_assistant"],
 			"env_variables": {
 				"PUBLIC_II_CANISTER_ID": "uqzsh-gqaaa-aaaaq-qaada-cai"
 			},
@@ -37,6 +41,12 @@
 		{ "src": "./icons/identity.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
 		{ "src": "./icons/audit.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
 		{ "src": "./icons/data.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+		{
+			"src": "./icons/documents.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "any"
+		},
 		{
 			"src": "./icons/ai_assistant.svg",
 			"sizes": "any",

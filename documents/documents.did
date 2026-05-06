@@ -1,0 +1,49 @@
+type Document = record {
+  id : nat64;
+  client_id : nat64;
+  label : text;
+  iv : vec nat8;
+  ciphertext : vec nat8;
+  plaintext_sha256 : text;
+  uploaded_by : principal;
+  uploaded_at_ns : nat64;
+  size_bytes : nat64;
+};
+
+type DocumentMeta = record {
+  id : nat64;
+  client_id : nat64;
+  label : text;
+  plaintext_sha256 : text;
+  uploaded_by : principal;
+  uploaded_at_ns : nat64;
+  size_bytes : nat64;
+};
+
+type UploadArgs = record {
+  client_id : nat64;
+  label : text;
+  iv : vec nat8;
+  ciphertext : vec nat8;
+  plaintext_sha256 : text;
+};
+
+type DocumentsError = variant {
+  Unauthorized;
+  NotFound;
+  InvalidArgument : text;
+  AuditCanisterNotConfigured;
+  UpstreamFailed : text;
+};
+
+service : () -> {
+  list_documents : (nat64) -> (variant { Ok : vec DocumentMeta; Err : DocumentsError }) query;
+  get_document_meta : (nat64) -> (variant { Ok : DocumentMeta; Err : DocumentsError }) query;
+  config : () -> (opt principal) query;
+
+  set_audit_canister : (principal) -> (variant { Ok; Err : DocumentsError });
+  fetch_document : (nat64) -> (variant { Ok : Document; Err : DocumentsError });
+  upload_document : (UploadArgs) -> (variant { Ok : nat64; Err : DocumentsError });
+  delete_document : (nat64) -> (variant { Ok; Err : DocumentsError });
+  reset_demo : () -> (variant { Ok : nat64; Err : DocumentsError });
+}

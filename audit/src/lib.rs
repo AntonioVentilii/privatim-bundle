@@ -88,6 +88,19 @@ pub enum AuditAction {
         citations: Vec<u64>,
     },
     ComplianceExport { from_seq: u64, to_seq: u64 },
+    DocumentUploaded {
+        client_id: u64,
+        doc_id: u64,
+        plaintext_sha256: String,
+    },
+    DocumentAccessed {
+        client_id: u64,
+        doc_id: u64,
+    },
+    DocumentDeleted {
+        client_id: u64,
+        doc_id: u64,
+    },
 }
 
 #[derive(Clone, Debug, CandidType, Serialize, Deserialize)]
@@ -183,6 +196,11 @@ fn action_repr(a: &AuditAction) -> String {
             )
         }
         ComplianceExport { from_seq, to_seq } => format!("compliance_export:{from_seq}-{to_seq}"),
+        DocumentUploaded { client_id, doc_id, plaintext_sha256 } => {
+            format!("doc_uploaded:{client_id}:{doc_id}:{plaintext_sha256}")
+        }
+        DocumentAccessed { client_id, doc_id } => format!("doc_accessed:{client_id}:{doc_id}"),
+        DocumentDeleted { client_id, doc_id } => format!("doc_deleted:{client_id}:{doc_id}"),
     }
 }
 

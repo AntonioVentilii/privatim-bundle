@@ -6,5 +6,6 @@ canisters:
   - identity
   - audit
   - data
+  - documents
   - ai_assistant
   - web_frontend

@@ -543,13 +543,21 @@ production.
 Not blocking, but worth surfacing so internal readers don't trip on
 them:
 
-- **No KYC document workflow.** `KycStatus` is a coarse enum
-  (`Pending` / `Approved` / `Expired`); there's no document upload,
-  no UBO chart, no signed-mandate flow. **Round 2 (next commit) adds
-  the documents canister with client-side AES-GCM encryption** —
-  that's the thing that turns "audit-logged client records" into
-  "client documents the engine creator with full controller access
-  cannot decrypt".
+- **KYC document storage IS shipped (round 2).** A separate
+  `documents` canister stores client-side AES-256-GCM encrypted
+  blobs (KYC PDFs, contracts, signed mandates). Each document gets a
+  fresh random 256-bit key generated in the user's browser; the
+  canister sees only ciphertext + IV. **The engine creator with full
+  canister-controller access cannot decrypt** — there's nothing on
+  the canister to decrypt with. The audit chain captures
+  `DocumentUploaded` / `DocumentAccessed` / `DocumentDeleted` events
+  with the plaintext SHA-256 (so compliance can verify a document
+  later if the user provides a copy), but never the key or the
+  plaintext itself. Tradeoffs (also showcase-grade): no key escrow,
+  no cross-device sync, no "share with another advisor" flow — the
+  uploader's browser localStorage is the only place the key lives.
+  Production answer is vetkeys when the IC ships them stable, or
+  threshold-signed key wrapping among advisors.
 - **The audit canister is callable by writers via plain `update`.**
   A writer canister (data, ai_assistant, identity) calls `audit.record`
   and the entry lands. There's no per-call attestation, just an

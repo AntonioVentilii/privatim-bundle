@@ -37,7 +37,16 @@ export type AuditAction =
 				citations: bigint[];
 			};
 	  }
-	| { ComplianceExport: { from_seq: bigint; to_seq: bigint } };
+	| { ComplianceExport: { from_seq: bigint; to_seq: bigint } }
+	| {
+			DocumentUploaded: {
+				client_id: bigint;
+				doc_id: bigint;
+				plaintext_sha256: string;
+			};
+	  }
+	| { DocumentAccessed: { client_id: bigint; doc_id: bigint } }
+	| { DocumentDeleted: { client_id: bigint; doc_id: bigint } };
 
 export interface AuditEntry {
 	seq: bigint;

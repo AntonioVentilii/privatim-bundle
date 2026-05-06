@@ -26,6 +26,9 @@ type AuditAction = variant {
   AssistantQueried : record { client_id : opt nat64; intent : text };
   AssistantResponded : record { client_id : opt nat64; intent : text; citations : vec nat64 };
   ComplianceExport : record { from_seq : nat64; to_seq : nat64 };
+  DocumentUploaded : record { client_id : nat64; doc_id : nat64; plaintext_sha256 : text };
+  DocumentAccessed : record { client_id : nat64; doc_id : nat64 };
+  DocumentDeleted : record { client_id : nat64; doc_id : nat64 };
 };
 
 type AuditEntry = record {

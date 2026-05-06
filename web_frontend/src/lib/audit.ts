@@ -51,6 +51,12 @@ function actionRepr(a: AuditAction): string {
 	}
 	if ('ComplianceExport' in a)
 		return `compliance_export:${a.ComplianceExport.from_seq}-${a.ComplianceExport.to_seq}`;
+	if ('DocumentUploaded' in a)
+		return `doc_uploaded:${a.DocumentUploaded.client_id}:${a.DocumentUploaded.doc_id}:${a.DocumentUploaded.plaintext_sha256}`;
+	if ('DocumentAccessed' in a)
+		return `doc_accessed:${a.DocumentAccessed.client_id}:${a.DocumentAccessed.doc_id}`;
+	if ('DocumentDeleted' in a)
+		return `doc_deleted:${a.DocumentDeleted.client_id}:${a.DocumentDeleted.doc_id}`;
 	const _: never = a;
 	return _;
 }
@@ -169,6 +175,12 @@ export function describeAction(a: AuditAction): string {
 	}
 	if ('ComplianceExport' in a)
 		return `Exported audit slice ${a.ComplianceExport.from_seq}–${a.ComplianceExport.to_seq}`;
+	if ('DocumentUploaded' in a)
+		return `Uploaded encrypted document #${a.DocumentUploaded.doc_id} to client #${a.DocumentUploaded.client_id}`;
+	if ('DocumentAccessed' in a)
+		return `Accessed encrypted document #${a.DocumentAccessed.doc_id} on client #${a.DocumentAccessed.client_id}`;
+	if ('DocumentDeleted' in a)
+		return `Deleted encrypted document #${a.DocumentDeleted.doc_id} from client #${a.DocumentDeleted.client_id}`;
 	const _: never = a;
 	return _;
 }

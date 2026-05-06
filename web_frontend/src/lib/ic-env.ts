@@ -44,6 +44,7 @@ function lookup(name: string, viteName: string): string {
 export const getIdentityId = () => lookup('identity', 'VITE_CANISTER_ID_IDENTITY');
 export const getAuditId = () => lookup('audit', 'VITE_CANISTER_ID_AUDIT');
 export const getDataId = () => lookup('data', 'VITE_CANISTER_ID_DATA');
+export const getDocumentsId = () => lookup('documents', 'VITE_CANISTER_ID_DOCUMENTS');
 export const getAiAssistantId = () =>
 	lookup('ai_assistant', 'VITE_CANISTER_ID_AI_ASSISTANT');
 

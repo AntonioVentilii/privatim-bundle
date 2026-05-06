@@ -51,7 +51,14 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 			intent: IDL.Text,
 			citations: IDL.Vec(IDL.Nat64)
 		}),
-		ComplianceExport: IDL.Record({ from_seq: IDL.Nat64, to_seq: IDL.Nat64 })
+		ComplianceExport: IDL.Record({ from_seq: IDL.Nat64, to_seq: IDL.Nat64 }),
+		DocumentUploaded: IDL.Record({
+			client_id: IDL.Nat64,
+			doc_id: IDL.Nat64,
+			plaintext_sha256: IDL.Text
+		}),
+		DocumentAccessed: IDL.Record({ client_id: IDL.Nat64, doc_id: IDL.Nat64 }),
+		DocumentDeleted: IDL.Record({ client_id: IDL.Nat64, doc_id: IDL.Nat64 })
 	});
 
 	const AuditEntry = IDL.Record({

@@ -240,7 +240,13 @@
 		</div>
 	</section>
 
-	<div class="mt-8 flex justify-end">
+	<div class="mt-8 flex flex-wrap justify-end gap-3">
+		<a
+			href={`/clients/${client.id}/documents`}
+			class="surface ink-muted hover:ink rounded px-4 py-2 text-sm font-bold"
+		>
+			Documents (encrypted) →
+		</a>
 		<a
 			href={`/assistant?client=${client.id}`}
 			class="rounded px-4 py-2 text-sm font-bold text-[var(--color-paper)]"
