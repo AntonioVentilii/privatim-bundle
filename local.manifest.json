@@ -2,8 +2,8 @@
 	"manifest_version": 1,
 	"name": "Privatim",
 	"short_name": "Sovereign AI for private banking",
-	"application_version": "0.3.4",
-	"description": "An auditable, jurisdiction-locked private-banking workspace with an on-engine AI assistant. Six-canister architecture: identity, audit, data, documents (client-side encrypted), ai_assistant, web_frontend.",
+	"application_version": "0.3.5",
+	"description": "Sovereign private-banking workspace with an on-engine AI assistant. Every client read, every AI prompt, and every document upload lands on a tamperproof audit chain anyone can re-verify.",
 	"main_canister": "web_frontend",
 
 	"canisters": {
@@ -62,6 +62,9 @@
 	],
 
 	"screenshots": [
-		{ "src": "./screenshots/thumbnail.jpg", "sizes": "1280x853", "type": "image/jpeg" }
+		{ "src": "./screenshots/thumbnail.jpg", "sizes": "1280x853", "type": "image/jpeg" },
+		{ "src": "./screenshots/privatim-1.webp", "sizes": "1536x1024", "type": "image/webp" },
+		{ "src": "./screenshots/privatim-1-1.webp", "sizes": "1536x1024", "type": "image/webp" },
+		{ "src": "./screenshots/privatim-1-2.webp", "sizes": "1536x1024", "type": "image/webp" }
 	]
 }
