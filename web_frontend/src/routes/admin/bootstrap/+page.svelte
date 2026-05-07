@@ -22,6 +22,18 @@
 	);
 	let runningManual = $state(false);
 
+	// — LLM endpoint setter —
+	//
+	// `icp deploy` injects `PUBLIC_CANISTER_ID:*` env vars but does NOT read
+	// the marketplace manifests, so for local dev the LLM base URL has to
+	// be set at runtime. We pre-fill the input with the same default the
+	// manifests carry, and the manual-wiring sequence below includes a
+	// `set_llm_base_url` call so a single click sets up everything.
+	const DEFAULT_LLM_BASE_URL = 'https://[2602:fb2b:100:101:50bf:a8ff:fe92:6cdd]:11500';
+	let llmUrl = $state(DEFAULT_LLM_BASE_URL);
+	let savingLlm = $state(false);
+	let llmSaveDetail = $state<string | null>(null);
+
 	async function probe() {
 		const b = auth.state.backends;
 		if (!b) return;
@@ -74,6 +86,24 @@
 				}
 			];
 
+			// LLM endpoint
+			const llmOpt = await b.ai.llm_config();
+			const llmCurrent = Array.isArray(llmOpt) && llmOpt.length > 0 ? llmOpt[0] : undefined;
+			probes = [
+				...probes,
+				{
+					label: 'ai_assistant → LLM endpoint set',
+					status: llmCurrent ? 'ok' : 'fail',
+					detail: llmCurrent ?? 'PUBLIC_LLM_BASE_URL env var not set; use the LLM section below'
+				}
+			];
+			// If the canister already has a value, mirror it into the input
+			// (overrides the DEFAULT_LLM_BASE_URL prefill) so the operator
+			// sees what's actually live rather than a stale placeholder.
+			if (llmCurrent) {
+				llmUrl = llmCurrent;
+			}
+
 			// Identity bootstrap
 			const adminBootstrapped = await b.identity.admin_bootstrapped();
 			probes = [
@@ -108,7 +138,14 @@
 			},
 			{ label: 'data.set_audit_canister(audit)', fn: () => b.data.set_audit_canister(audit) },
 			{ label: 'ai_assistant.set_data_canister(data)', fn: () => b.ai.set_data_canister(data) },
-			{ label: 'ai_assistant.set_audit_canister(audit)', fn: () => b.ai.set_audit_canister(audit) }
+			{
+				label: 'ai_assistant.set_audit_canister(audit)',
+				fn: () => b.ai.set_audit_canister(audit)
+			},
+			{
+				label: `ai_assistant.set_llm_base_url(${llmUrl.trim() || DEFAULT_LLM_BASE_URL})`,
+				fn: () => b.ai.set_llm_base_url(llmUrl.trim() || DEFAULT_LLM_BASE_URL)
+			}
 		];
 
 		manualLog = [];
@@ -143,6 +180,26 @@
 			runningManual = false;
 		}
 		await probe();
+	}
+
+	async function saveLlmUrl() {
+		const b = auth.state.backends;
+		if (!b) return;
+		llmSaveDetail = null;
+		savingLlm = true;
+		try {
+			const r = await b.ai.set_llm_base_url(llmUrl.trim());
+			if ('Err' in r) {
+				llmSaveDetail = appErrorMessage(r.Err);
+			} else {
+				llmSaveDetail = 'Saved.';
+				await probe();
+			}
+		} catch (err) {
+			llmSaveDetail = appErrorMessage(err);
+		} finally {
+			savingLlm = false;
+		}
 	}
 
 	$effect(() => {
@@ -216,11 +273,44 @@
 			{/if}
 		</div>
 
+		<div class="surface space-y-3 rounded p-6">
+			<h2 class="font-serif text-lg font-black">LLM endpoint</h2>
+			<p class="ink-muted text-sm">
+				Base URL of the on-engine GPU node serving <code>POST /v1/agent/run</code>.
+				The canister appends the path itself. Picked up automatically from the
+				<code>PUBLIC_LLM_BASE_URL</code> env var at install time; rotate at runtime here
+				(controllers only).
+			</p>
+			<input
+				type="text"
+				bind:value={llmUrl}
+				placeholder="https://[2602:fb2b:100:101:50bf:a8ff:fe92:6cdd]:11500"
+				class="rule-line surface w-full rounded border px-3 py-2 font-mono text-xs"
+			/>
+			<div class="flex items-center gap-3">
+				<button
+					type="button"
+					onclick={saveLlmUrl}
+					disabled={savingLlm || !llmUrl.trim()}
+					class="rounded px-4 py-2 text-sm font-bold text-[var(--color-paper)] disabled:opacity-50"
+					style="background: var(--color-burgundy);"
+				>
+					{savingLlm ? 'Saving…' : 'Save LLM endpoint'}
+				</button>
+				{#if llmSaveDetail}
+					<span class="ink-muted text-xs">{llmSaveDetail}</span>
+				{/if}
+			</div>
+		</div>
+
 		{#if !allOk}
 			<div class="surface space-y-3 rounded p-6">
 				<h2 class="font-serif text-lg font-black">Manual fallback</h2>
 				<p class="ink-muted text-sm">
-					Issues 6 setter calls in sequence. Use only if the wiring status above shows red.
+					Issues 7 setter calls in sequence (inter-canister wiring +
+					<code>ai_assistant.set_llm_base_url</code> using the URL from the LLM endpoint
+					section above). Use when the wiring status above shows red — typical after a
+					local <code>icp deploy</code>, which doesn't read the marketplace manifest.
 				</p>
 				<button
 					type="button"

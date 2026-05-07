@@ -51,8 +51,10 @@ export const idlFactory: IDL.InterfaceFactory = ({ IDL }) => {
 	return IDL.Service({
 		whoami: IDL.Func([], [IDL.Principal], ['query']),
 		config: IDL.Func([], [IDL.Opt(IDL.Principal), IDL.Opt(IDL.Principal)], ['query']),
+		llm_config: IDL.Func([], [IDL.Opt(IDL.Text)], ['query']),
 		set_data_canister: IDL.Func([IDL.Principal], [ResultUnit], []),
 		set_audit_canister: IDL.Func([IDL.Principal], [ResultUnit], []),
+		set_llm_base_url: IDL.Func([IDL.Text], [ResultUnit], []),
 		ask: IDL.Func([AssistantRequest], [ResultResponse], [])
 	});
 };
