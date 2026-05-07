@@ -252,9 +252,12 @@ Then:
   in the background, `data.record_client_access` posts a
   `ClientAccessed` entry to the audit chain.
 - Open `/assistant`, pick the same client, ask _"Portfolio overview"_.
-  The stub LLM (`model: stub-v1`) answers with citations like
-  `[#0]`, `[#1]`, `[#2]`. Two new audit entries are written:
-  `AssistantQueried` and `AssistantResponded`.
+  The canister fetches the client's records under your identity, posts
+  them as context to the on-engine LLM (`PUBLIC_LLM_BASE_URL`), and
+  renders the model's answer with canister-built citations like
+  `[#0]`, `[#1]`, `[#2]`. The badge shows the actual end-to-end
+  inference time (data fetches + LLM outcall + audit appends). Two new
+  audit entries are written: `AssistantQueried` and `AssistantResponded`.
 - Open `/audit`. The hash-chain re-verifier runs in your browser. The
   badge should go **green** ("Chain intact — N of M entries
   verified").

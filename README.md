@@ -19,10 +19,12 @@ The pitch is in [`PITCH.md`](./PITCH.md). The packaging walkthrough is in
   client PII unredacted.
 - **AI assistant scoped to your book.** A separate canister
   (`ai_assistant`) that answers structured queries over the bank's data
-  via inter-canister calls under the caller's identity. **v1 is a
-  transparent stub** — UI labels it "Stub LLM, real inference deploys
-  on this engine's GPU node". Real prompts, real source citations,
-  honest about what it is.
+  via inter-canister calls under the caller's identity, then calls a
+  **real LLM** running on a GPU node attached to the same Cloud Engine.
+  The canister POSTs a prompt + record context to
+  `{PUBLIC_LLM_BASE_URL}/v1/agent/run` via a non-replicated HTTPS
+  outcall. Citations are still canister-built (the model can't invent
+  them), and both prompt context and response land on the audit chain.
 - **Hash-chained audit log of every read, every write, every AI prompt
   and response.** That's the FINMA-shaped lineage. The frontend's
   `/audit` page re-verifies the chain in the browser; `/admin/compliance`
@@ -45,7 +47,7 @@ The pitch is in [`PITCH.md`](./PITCH.md). The packaging walkthrough is in
 ├── identity/                  # Rust canister: roles, advisor↔client assignments
 ├── audit/                     # Rust canister: hash-chained log + signed export
 ├── data/                      # Rust canister: clients, portfolios, meetings, trade ideas
-├── ai_assistant/              # Rust canister: stub LLM today, real LLM v2
+├── ai_assistant/              # Rust canister: real LLM via on-engine GPU outcall
 └── web_frontend/              # SvelteKit + Tailwind, adapter-static
 ```
 
