@@ -48,7 +48,9 @@ export type ResultResponse = { Ok: AssistantResponse } | { Err: AssistantError }
 export interface AiAssistantService {
 	whoami: ActorMethod<[], Principal>;
 	config: ActorMethod<[], [[] | [Principal], [] | [Principal]]>;
+	llm_config: ActorMethod<[], [] | [string]>;
 	set_data_canister: ActorMethod<[Principal], ResultUnit>;
 	set_audit_canister: ActorMethod<[Principal], ResultUnit>;
+	set_llm_base_url: ActorMethod<[string], ResultUnit>;
 	ask: ActorMethod<[AssistantRequest], ResultResponse>;
 }

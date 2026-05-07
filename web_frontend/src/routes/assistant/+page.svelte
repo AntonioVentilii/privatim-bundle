@@ -32,9 +32,9 @@
 	//
 	// The canister returns the full answer text in one shot; we animate
 	// it into the UI word-by-word so the demo "feels" like inference is
-	// happening live. Honest about it: the badge says "model: stub-v1,
-	// inferred in N ms" with the ACTUAL canister-side compute time
-	// returned by ai_assistant.ask, so the timing isn't faked.
+	// happening live. The badge shows the ACTUAL canister-side compute
+	// time returned by ai_assistant.ask (covers the data fetches +
+	// LLM https outcall + audit appends), so the timing isn't faked.
 	let streamedAnswer = $state('');
 	let streaming = $state(false);
 	let traceLines = $state<string[]>([]);
@@ -235,13 +235,13 @@
 				<div>
 					<div class="ink-muted text-[11px] tracking-[0.18em] uppercase">Response</div>
 					<div class="ink-muted mt-1 text-xs">
-						<span class="font-mono">{response?.model ?? 'stub-v1'}</span>
 						{#if response}
-							· inferred in <span class="font-mono">{response.inference_ms.toString()} ms</span>
+							inferred in <span class="font-mono">{response.inference_ms.toString()} ms</span>
 							· audit seq <span class="font-mono">{response.audit_seq.toString()}</span>
 						{/if}
 						{#if askedAt}
-							· {formatDateTime(askedAt)}
+							{response ? '·' : ''}
+							{formatDateTime(askedAt)}
 						{/if}
 					</div>
 				</div>
