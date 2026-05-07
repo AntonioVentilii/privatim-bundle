@@ -40,7 +40,9 @@ type AssistantError = variant {
 service : () -> {
   whoami : () -> (principal) query;
   config : () -> (opt principal, opt principal) query;
+  llm_config : () -> (opt text) query;
   set_data_canister : (principal) -> (variant { Ok; Err : AssistantError });
   set_audit_canister : (principal) -> (variant { Ok; Err : AssistantError });
+  set_llm_base_url : (text) -> (variant { Ok; Err : AssistantError });
   ask : (AssistantRequest) -> (variant { Ok : AssistantResponse; Err : AssistantError });
 }

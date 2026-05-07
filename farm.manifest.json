@@ -25,7 +25,10 @@
 		},
 		"ai_assistant": {
 			"dependencies": ["identity", "audit", "data"],
-			"init_arg": { "arg": "()", "format": "candid" }
+			"init_arg": { "arg": "()", "format": "candid" },
+			"env_variables": {
+				"PUBLIC_LLM_BASE_URL": "https://[2602:fb2b:100:101:50bf:a8ff:fe92:6cdd]:11500"
+			}
 		},
 		"web_frontend": {
 			"dependencies": ["identity", "audit", "data", "documents", "ai_assistant"],
