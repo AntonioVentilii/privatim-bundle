@@ -47,15 +47,20 @@ through what that looks like in practice, using the concrete shape of
 the bundle in this repo as the worked example.
 
 > **One framing note up front, applies everywhere below.** The AI
-> assistant in this bundle is a **transparent stub**. No model weights
-> ship. v1 is a deterministic structured-query engine that wears an
-> LLM's interface — real prompts, real source-line citations, fast,
-> honest. The point is not to fake intelligence; the point is to
-> demonstrate the architecture (sovereign data → on-engine inference →
-> audit-logged interaction) so that swapping in a real model later is
-> a one-canister swap, not a re-architecture. The five-canister design,
-> the audit chain, the role-gated access, the compliance export — those
-> are the showcase. Read everything below with that calibration.
+> assistant in this bundle calls a **real LLM**. No model weights ship
+> inside the canister itself — inference runs on a GPU node attached
+> to the same Cloud Engine, reached via a non-replicated HTTPS outcall
+> to `POST /v1/agent/run`. The model URL is configured at install time
+> via the `PUBLIC_LLM_BASE_URL` env var in the marketplace manifest, or
+> rotated at runtime via `set_llm_base_url` (controllers only). The
+> earlier version of this bundle shipped a deterministic stub with
+> the claim that swapping in a real model would be _a one-canister
+> swap, not a re-architecture_. That claim has now been exercised in
+> code: the audit chain, the role-gated access, the citations contract,
+> the inter-canister call shape — all unchanged. The five-canister
+> design and what surrounds the model is still the substantive
+> showcase; the model is just no longer a stub. Read everything below
+> with that calibration.
 
 ---
 
@@ -381,6 +386,26 @@ Honesty matters for the pitch to land:
   model saw — but the answer can still be wrong. Provable provenance
   doesn't make a wrong recommendation right. It only makes it
   forensically explicable, which is what the regulator wants.
+- **The LLM call is non-replicated.** The HTTPS outcall to the GPU
+  node is made by a single engine replica, not threshold-signed by the
+  whole engine. This is necessary because LLM completions are
+  non-deterministic, and a replicated outcall would have every replica
+  in the engine run the same prompt, get different completions, and
+  see them all rejected by consensus. The consequence is that the
+  _model's free-text response_ carries one-of-N trust, not
+  threshold-of-N. Everything _around_ the call — the records the model
+  was given (replicated query results from `data` under the user's
+  identity), the citations the canister builds from those records,
+  the `AssistantQueried` and `AssistantResponded` audit-log entries
+  that capture both the prompt context and the response — remains
+  threshold-signed and tamperproof. For the regulator's question
+  _"what records did the AI see and what did it produce"_, both halves
+  are still provable; the tamperproof guarantee on the second half is
+  one-of-N rather than threshold-of-N. A future TEE/GPU subnet
+  (the whitepaper hints at SEV-enabled subnets — §2.2 _vs.
+  decentralised compute platforms_) would close this gap by giving
+  the inference itself a hardware attestation; the canister-side
+  contract wouldn't have to change.
 - **Engine-level replication is lower than mainnet.** This is a
   deliberate trade-off in the whitepaper: 3–4 nodes is _strictly more
   resilient than a single-operator cloud deployment_, but weaker than a
@@ -410,39 +435,67 @@ Honesty matters for the pitch to land:
 > If you are reading this as an external pitch you can skip it; the rest
 > of the document is the argument. This part is the honest receipts.
 
-The bundle in this repo is a showcase, not a product. There are six
+The bundle in this repo is a showcase, not a product. There are five
 substantive engineering shortcuts that anyone looking to "ship this for
-real" needs to know about. Three of them mirror the Vici-bundle
-shortcuts (because we're doing the same demo-grade work); three are
-specific to Privatim.
+real" needs to know about (down from six — §1 used to be _"the AI is a
+transparent stub"_; that one has been retired by PR #1, and §1 now
+documents what landed instead so this section keeps the original
+numbering for anyone cross-referencing the bullet doc). Two of the
+remaining shortcuts mirror the Vici-bundle shortcuts (same demo-grade
+work); three are specific to Privatim.
 
-### 1. The AI is a transparent stub.
+### 1. The AI is a real on-engine LLM call (formerly a transparent stub).
 
-Said plainly: do not evaluate this app as an AI product. Evaluate it as
-a worked example of an _auditable, jurisdiction-locked, governance-clear
-SaaS app with an AI-shaped surface_, where the AI surface happens to be
-implemented as a deterministic structured-query engine for v1.
+The earlier version of this section made the claim that swapping a
+stub for a real model would be a one-canister change. That claim has
+now been _exercised_ in code: PR #1 (`feat(assistant): adding AI
+integration`) replaced the deterministic Rust synthesiser with a real
+HTTPS-outcall LLM client. The audit chain, role gating, inter-canister
+calls, and citations contract all stayed the same. The diff was almost
+entirely confined to `ai_assistant/src/lib.rs`.
 
-The substantive AI engineering is in `ai_assistant/src/lib.rs`'s seven
-intent handlers (`PortfolioOverview`, `RiskAssessment`, `KycStatus`,
-`MeetingDigest`, `OpenTradeIdeas`, `FxExposureBook`, `KycActionList`).
-Each one issues inter-canister queries to `data` _under the user's
-identity_, runs deterministic Rust over the result, and emits
-markdown-with-`[#N]`-citations. UI labels the response with
-`model: stub-v1` so the user is never deceived about what they're
-talking to.
+What now happens on every `ask`:
 
-If a stakeholder evaluates the stub LLM and concludes "this isn't as
-smart as GPT-5" they have read the demo wrong. The stub is correct,
-deliberate, and irrelevant to the pitch. **The pitch is the
-architecture surrounding the AI box, not the box itself.**
+1. **Phase 1 — gather records.** The `ai_assistant` canister calls
+   `data._for(end_user)` under the user's identity (the
+   update-mode endpoint family added for exactly this lane — see §4
+   below) to fetch only the records the caller is already authorised
+   to see. This is the same authz boundary the stub had.
+2. **Phase 2 — call the model.** It builds a preamble bundling the
+   role prompt, the per-intent task description, a citation index, and
+   the records as JSON. It POSTs
+   `{ prompt, preamble, context, max_turns: 30 }` to
+   `{PUBLIC_LLM_BASE_URL}/v1/agent/run` via
+   `ic_cdk::management_canister::http_request` with
+   `is_replicated: false` (see "What this isn't" in the external
+   pitch for the trust-model consequence).
+3. **Phase 3 — audit both sides.** It records `AssistantQueried`
+   (with the citation IDs in the prompt context) and
+   `AssistantResponded` on the `audit` canister so both halves of the
+   exchange land on the same hash chain as the rest of the bank's
+   data. Inference timing on the response covers data fetches + LLM
+   outcall + audit appends, so the badge in the UI isn't faked.
 
-When a real on-engine LLM lands (~3–5 days of work for a Llama-3.2-1B
-class model in a sibling canister; weeks-to-months for a TEE/GPU node),
-the swap is **one canister**: replace `ai_assistant` with a version
-that calls a model instead of running deterministic logic. The audit
-chain, the role gating, the inter-canister calls, the citations
-contract — all unchanged.
+**Citations remain canister-built.** The model is told to refer to
+records by `[#N]` markers, but the `AssistantCitation[]` array
+returned to the frontend is constructed from the data the canister
+fetched, never from anything the model said. A hallucinating model
+can't invent citations — at worst it can mis-cite an existing one,
+which the frontend renders as a broken link.
+
+Substantive AI engineering is now concentrated in `ai_assistant/src/lib.rs`'s
+seven `gather_*` functions (each shaping the records the model is
+allowed to see for a given intent) plus a single shared `call_llm`.
+The model URL is set at install time via `PUBLIC_LLM_BASE_URL` in the
+marketplace manifest, or rotated at runtime via `set_llm_base_url`
+(controllers only). For local dev — where `icp deploy` doesn't read
+the marketplace manifest — `/admin/bootstrap` has an LLM-endpoint
+section that saves directly to the canister.
+
+If a stakeholder evaluates the model itself and concludes "this isn't
+as smart as GPT-5" they have read the demo wrong. The model is now a
+swappable component; the pitch is the architecture _surrounding_ that
+component, which has been demonstrated to be model-agnostic.
 
 ### 2. Resolution of trade ideas is creator-trusted.
 

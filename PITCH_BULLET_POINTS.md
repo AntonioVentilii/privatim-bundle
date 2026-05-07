@@ -13,10 +13,14 @@
   secrecy art. 47 BankG is criminal liability and Microsoft Copilot in
   Azure-Switzerland is a contract, not a proof.** Cloud Engines closes
   that gap. → [Why private banking is the right vertical](./PITCH.md#why-private-banking-is-the-right-vertical)
-- **The AI in this bundle is a transparent stub** (`model: stub-v1`).
-  Real intent routing over real client data with real source-line
-  citations. The pitch is the architecture surrounding the AI box, not
-  the box itself. v2 swap-out is one canister.
+- **The AI in this bundle calls a real LLM on an on-engine GPU node**
+  via a non-replicated HTTPS outcall to `POST /v1/agent/run`. Model URL
+  configured per engine via `PUBLIC_LLM_BASE_URL` in the marketplace
+  manifest, or rotated at runtime via `set_llm_base_url`. The pitch
+  was always the architecture surrounding the AI box, not the box
+  itself; the v2 swap-out really did turn out to be one canister —
+  audit chain, role gating, inter-canister calls, citations contract
+  all unchanged from the stub.
   → opening callout in [`PITCH.md`](./PITCH.md#why-private-banking-is-the-right-vertical)
 
 ---
@@ -117,6 +121,14 @@
 - The audit chain only covers what the canisters see. Hallucinations
   faithfully record what records the model saw — the answer can still
   be wrong. Provable provenance ≠ correct recommendation.
+- The LLM call is non-replicated. The HTTPS outcall to the GPU node
+  is made by a single engine replica (LLM completions are
+  non-deterministic; a replicated outcall would discard them all
+  under consensus). The model's free-text response carries one-of-N
+  trust, not threshold-of-N. Everything _around_ the call (records,
+  citations, audit log) remains threshold-signed. A future TEE/GPU
+  subnet (whitepaper §2.2) closes the gap; the canister-side contract
+  doesn't need to change.
 - Engine replication is lower than mainnet (3–4 nodes is _strictly
   more resilient than a single-operator cloud_ but weaker than full
   NNS-vetted subnets). Pick spec class with eyes open.
@@ -135,17 +147,22 @@
 
 ## Engineering notes — internal honesty
 
-> Six things this bundle deliberately does not do yet, what each would
-> cost to fix, and how to read the demo without flattering ourselves.
+> Five things this bundle deliberately does not do yet, what each
+> would cost to fix, and how to read the demo without flattering
+> ourselves. (§1 used to be _"the AI is a transparent stub"_; PR #1
+> retired that shortcut and §1 now documents what landed instead, so
+> the numbering still matches the prose pitch.)
 
-- **The AI is a transparent stub** (`model: stub-v1`). Real intent
-  routing + real citations + deterministic Rust synthesis. Substantive
-  AI engineering is concentrated in `ai_assistant/src/lib.rs`'s seven
-  intent handlers. v2 swap to a Llama-3.2-1B class on-canister model
-  is ~3–5 days; TEE/GPU node is weeks-to-months when those land. _The
-  audit chain, role gating, inter-canister calls, citations contract
-  — all unchanged in v2._
-  → [Engineering notes §1](./PITCH.md#1-the-ai-is-a-transparent-stub)
+- **The AI is a real on-engine LLM call (formerly a transparent stub).**
+  PR #1 replaced the deterministic Rust synthesiser with an HTTPS
+  outcall to `{PUBLIC_LLM_BASE_URL}/v1/agent/run` via
+  `ic_cdk::management_canister::http_request` with `is_replicated:
+  false`. Substantive AI engineering is now in `ai_assistant/src/lib.rs`'s
+  seven `gather_*` functions (records → JSON for the model) plus a
+  single `call_llm`. The audit chain, role gating, inter-canister
+  calls, and citations contract are all unchanged from the stub —
+  the "v2 swap-out is one canister" claim has been exercised in code.
+  → [Engineering notes §1](./PITCH.md#1-the-ai-is-a-real-on-engine-llm-call-formerly-a-transparent-stub)
 
 - **Trade-idea workflow is creator-trusted, no four-eyes.** Status
   changes gated by "primary advisor or Admin". No proposer/approver
