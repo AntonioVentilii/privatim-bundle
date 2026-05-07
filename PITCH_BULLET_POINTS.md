@@ -64,8 +64,12 @@
   structurally: who can change the AI, who can change the data, who
   can change the audit, who can change the access rules. _"Our IT
   department, with logging"_ does not satisfy this.
-- Cloud Engines splits governance across three parties whose interests
-  are not jointly aligned: node providers (paid for uptime, no canister
+- The whitepaper's _commercial_ model has three actors: node providers,
+  engine creators, app deployers — with an 80/20 revenue split (80% to
+  node providers as ICP/USD stablecoin, 20% burned as cycles, engine
+  creator's margin in between). The _governance_ slicing of the same
+  architecture splits power across three parties whose interests are
+  not jointly aligned: node providers (paid for uptime, no canister
   access), engine creators (live ops + node selection, no state
   read/write), the NNS (governs the protocol, controlled by no single
   entity including DFINITY).
@@ -91,8 +95,10 @@
   upgrades (per-canister!), persistence, OS / patch surface. _Most
   security is a property of the substrate, not a checklist for the
   bank._
-- "Deploy without a security team" is an engineering consequence, not a
-  slogan.
+- The whitepaper's claim (§1.3) — _"an app deployer does not need a
+  dedicated security team or system administrator, because the protocol
+  enforces integrity and availability by design"_ — is engineering
+  consequence, not slogan.
 - Multi-canister design lets the bank swap LLM models — eventually
   swap inference onto a TEE/GPU node — without touching client data,
   without re-certifying the data plane, without going back through

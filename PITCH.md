@@ -220,6 +220,16 @@ not "we promise our staff are honest."
 
 ### What Cloud Engines + this five-canister design does
 
+> The whitepaper's commercial model has three actors: **node providers**
+> (supply machines), **engine creators** (assemble engines, sell packages),
+> and **app deployers** (the bank buying capacity with a credit card).
+> Revenue is split transparently: 80% to node providers as ICP/USD
+> stablecoin, 20% burned as cycles into ICP tokenomics, with the engine
+> creator retaining a margin in between. The slicing below is the
+> _governance_ view of the same architecture — it adds the NNS as the
+> protocol-level governance layer that sits beneath all three commercial
+> actors and that none of them controls.
+
 Three layers of governance, none of which can collude silently:
 
 1. **Node providers** are paid for keeping their machines running. They
@@ -319,9 +329,10 @@ compliance overhead.
 
 ### What Cloud Engines does
 
-The whitepaper's tagline — _"deploy without a security team, not as a
-slogan but as an engineering consequence"_ — is the substantive claim.
-The protocol handles:
+The whitepaper's substantive claim (§1.3): _"an app deployer does not
+need a dedicated security team or system administrator, because the
+protocol enforces integrity and availability by design."_ Concretely,
+the protocol handles:
 
 - **Replication** across all engine nodes.
 - **Consensus.** No deadlocks, no split-brain, no Paxos to misconfigure.
