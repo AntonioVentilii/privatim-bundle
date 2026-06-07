@@ -23,12 +23,8 @@
 			"dependencies": ["audit"],
 			"init_arg": { "arg": "()", "format": "candid" }
 		},
-		"ai_assistant": {
-			"dependencies": ["identity", "audit", "data"],
-			"init_arg": { "arg": "()", "format": "candid" }
-		},
 		"web_frontend": {
-			"dependencies": ["identity", "audit", "data", "documents", "ai_assistant"],
+			"dependencies": ["identity", "audit", "data", "documents"],
 			"env_variables": {
 				"PUBLIC_II_CANISTER_ID": "s24we-diaaa-aaaaa-aaaka-cai"
 			},
@@ -43,12 +39,6 @@
 		{ "src": "./icons/data.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
 		{
 			"src": "./icons/documents.svg",
-			"sizes": "any",
-			"type": "image/svg+xml",
-			"purpose": "any"
-		},
-		{
-			"src": "./icons/ai_assistant.svg",
 			"sizes": "any",
 			"type": "image/svg+xml",
 			"purpose": "any"

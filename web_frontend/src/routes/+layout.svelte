@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import { shortPrincipal } from '$lib/format';
+	import { AI_ENABLED } from '$lib/features';
 
 	let { children } = $props();
 
@@ -53,9 +54,10 @@
 	});
 
 	function visibleItems() {
-		return navItems.filter(
-			(i) => !i.requires || auth.hasRole(i.requires) || auth.hasRole('Admin')
-		);
+		return navItems.filter((i) => {
+			if (!AI_ENABLED && i.href === '/assistant') return false;
+			return !i.requires || auth.hasRole(i.requires) || auth.hasRole('Admin');
+		});
 	}
 </script>
 

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte';
+	import { AI_ENABLED } from '$lib/features';
 	import { formatChf, formatDateTime } from '$lib/format';
+	import DemoDataButton from '$lib/components/DemoDataButton.svelte';
 	import type { Client } from '../declarations/data.types';
 	import type { AuditHead } from '../declarations/audit.types';
 
@@ -94,6 +96,16 @@
 			</div>
 		</div>
 
+		{#if auth.hasRole('Admin')}
+			<div class="surface flex flex-wrap items-center justify-between gap-3 rounded p-6">
+				<div class="ink-muted text-sm">
+					<span class="ink font-bold">Admin tools.</span> Seed the workspace with synthetic clients,
+					portfolios, and meetings for the demo.
+				</div>
+				<DemoDataButton onseeded={() => load()} />
+			</div>
+		{/if}
+
 		<div class="grid gap-6 md:grid-cols-[2fr_1fr]">
 			<a
 				href="/clients"
@@ -110,17 +122,19 @@
 					{clients.length} clients visible to you
 				</div>
 			</a>
-			<a
-				href="/assistant"
-				class="surface hover:surface-deep group flex flex-col gap-2 rounded p-6 transition"
-				style="border-left: 3px solid var(--color-burgundy);"
-			>
-				<h2 class="font-serif text-xl font-black">Ask the assistant →</h2>
-				<p class="ink-muted text-sm">
-					Stub LLM. Real intent routing over your visible book. Every question + answer is
-					hash-chained.
-				</p>
-			</a>
+			{#if AI_ENABLED}
+				<a
+					href="/assistant"
+					class="surface hover:surface-deep group flex flex-col gap-2 rounded p-6 transition"
+					style="border-left: 3px solid var(--color-burgundy);"
+				>
+					<h2 class="font-serif text-xl font-black">Ask the assistant →</h2>
+					<p class="ink-muted text-sm">
+						Stub LLM. Real intent routing over your visible book. Every question + answer is
+						hash-chained.
+					</p>
+				</a>
+			{/if}
 		</div>
 
 		<div class="surface space-y-2 rounded p-6">
