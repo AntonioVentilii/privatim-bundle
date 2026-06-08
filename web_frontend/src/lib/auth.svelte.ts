@@ -49,8 +49,9 @@ function createAuth() {
 		state.authenticated = !state.principal.isAnonymous();
 		state.backends = backends;
 		await loadRoles(backends);
-		// First sign-in: try to claim Admin if nobody has yet. Idempotent
-		// — fails silently if already bootstrapped.
+		// Demo showcase: every sign-in claims Admin + Advisor so the user lands
+		// in a fully populated workspace and can use the demo-data button.
+		// Idempotent — a no-op once the principal already holds the roles.
 		try {
 			await backends.identity.bootstrap_admin();
 			await loadRoles(backends);
