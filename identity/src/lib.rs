@@ -230,30 +230,38 @@ fn bootstrap_admin() -> IdentityResult<()> {
     let p = assert_authenticated()?;
     STATE.with(|s| {
         let mut st = s.borrow_mut();
-        if st.admin_bootstrapped {
-            return Err(IdentityError::AlreadyBootstrapped);
+        // Demo showcase: every signed-in user is granted Admin + Advisor so
+        // they land in a fully populated workspace and can use the demo-data
+        // button. (This was once-only TOFU — only the first principal became
+        // admin, leaving every later visitor with an empty, locked app.)
+        // Idempotent: repeat logins don't re-emit the grant events.
+        let newly_admin = st.roles.entry(p).or_default().insert(Role::Admin);
+        let newly_advisor = st.roles.entry(p).or_default().insert(Role::Advisor);
+        if !st.admin_bootstrapped {
+            st.admin_bootstrapped = true;
+            st.bootstrap_at_ns = Some(time());
+            push_event(&mut st, p, IdentityEventKind::AdminBootstrapped);
         }
-        st.admin_bootstrapped = true;
-        st.bootstrap_at_ns = Some(time());
-        st.roles.entry(p).or_default().insert(Role::Admin);
-        st.roles.entry(p).or_default().insert(Role::Advisor);
-        push_event(&mut st, p, IdentityEventKind::AdminBootstrapped);
-        push_event(
-            &mut st,
-            p,
-            IdentityEventKind::RoleGranted {
-                grantee: p,
-                role: Role::Admin,
-            },
-        );
-        push_event(
-            &mut st,
-            p,
-            IdentityEventKind::RoleGranted {
-                grantee: p,
-                role: Role::Advisor,
-            },
-        );
+        if newly_admin {
+            push_event(
+                &mut st,
+                p,
+                IdentityEventKind::RoleGranted {
+                    grantee: p,
+                    role: Role::Admin,
+                },
+            );
+        }
+        if newly_advisor {
+            push_event(
+                &mut st,
+                p,
+                IdentityEventKind::RoleGranted {
+                    grantee: p,
+                    role: Role::Advisor,
+                },
+            );
+        }
         Ok(())
     })
 }

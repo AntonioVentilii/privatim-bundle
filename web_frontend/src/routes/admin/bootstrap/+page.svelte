@@ -1,12 +1,8 @@
 <script lang="ts">
 	import { auth } from '$lib/auth.svelte';
+	import { AI_ENABLED } from '$lib/features';
 	import { appErrorMessage } from '$lib/audit';
-	import {
-		getAiAssistantId,
-		getAuditId,
-		getDataId,
-		getIdentityId
-	} from '$lib/ic-env';
+	import { getAuditId, getDataId, getIdentityId } from '$lib/ic-env';
 	import { Principal } from '@dfinity/principal';
 
 	type Probe = {
@@ -69,39 +65,43 @@
 				}
 			];
 
-			const [aiDataOpt, aiAuditOpt] = await b.ai.config();
-			const aiData = aiDataOpt[0];
-			const aiAudit = aiAuditOpt[0];
-			probes = [
-				...probes,
-				{
-					label: 'ai_assistant → data wired',
-					status: aiData ? 'ok' : 'fail',
-					detail: aiData?.toText() ?? 'use Manual fallback'
-				},
-				{
-					label: 'ai_assistant → audit wired',
-					status: aiAudit ? 'ok' : 'fail',
-					detail: aiAudit?.toText() ?? 'use Manual fallback'
-				}
-			];
+			// AI is disabled bundle-wide (see lib/features.ts); the ai_assistant
+			// canister isn't shipped as a node, so skip its wiring probes.
+			if (AI_ENABLED && b.ai) {
+				const [aiDataOpt, aiAuditOpt] = await b.ai.config();
+				const aiData = aiDataOpt[0];
+				const aiAudit = aiAuditOpt[0];
+				probes = [
+					...probes,
+					{
+						label: 'ai_assistant → data wired',
+						status: aiData ? 'ok' : 'fail',
+						detail: aiData?.toText() ?? 'use Manual fallback'
+					},
+					{
+						label: 'ai_assistant → audit wired',
+						status: aiAudit ? 'ok' : 'fail',
+						detail: aiAudit?.toText() ?? 'use Manual fallback'
+					}
+				];
 
-			// LLM endpoint
-			const llmOpt = await b.ai.llm_config();
-			const llmCurrent = Array.isArray(llmOpt) && llmOpt.length > 0 ? llmOpt[0] : undefined;
-			probes = [
-				...probes,
-				{
-					label: 'ai_assistant → LLM endpoint set',
-					status: llmCurrent ? 'ok' : 'fail',
-					detail: llmCurrent ?? 'PUBLIC_LLM_BASE_URL env var not set; use the LLM section below'
+				// LLM endpoint
+				const llmOpt = await b.ai.llm_config();
+				const llmCurrent = Array.isArray(llmOpt) && llmOpt.length > 0 ? llmOpt[0] : undefined;
+				probes = [
+					...probes,
+					{
+						label: 'ai_assistant → LLM endpoint set',
+						status: llmCurrent ? 'ok' : 'fail',
+						detail: llmCurrent ?? 'PUBLIC_LLM_BASE_URL env var not set; use the LLM section below'
+					}
+				];
+				// If the canister already has a value, mirror it into the input
+				// (overrides the DEFAULT_LLM_BASE_URL prefill) so the operator
+				// sees what's actually live rather than a stale placeholder.
+				if (llmCurrent) {
+					llmUrl = llmCurrent;
 				}
-			];
-			// If the canister already has a value, mirror it into the input
-			// (overrides the DEFAULT_LLM_BASE_URL prefill) so the operator
-			// sees what's actually live rather than a stale placeholder.
-			if (llmCurrent) {
-				llmUrl = llmCurrent;
 			}
 
 			// Identity bootstrap
@@ -136,17 +136,24 @@
 				label: 'data.set_identity_canister(identity)',
 				fn: () => b.data.set_identity_canister(identity)
 			},
-			{ label: 'data.set_audit_canister(audit)', fn: () => b.data.set_audit_canister(audit) },
-			{ label: 'ai_assistant.set_data_canister(data)', fn: () => b.ai.set_data_canister(data) },
-			{
-				label: 'ai_assistant.set_audit_canister(audit)',
-				fn: () => b.ai.set_audit_canister(audit)
-			},
-			{
-				label: `ai_assistant.set_llm_base_url(${llmUrl.trim() || DEFAULT_LLM_BASE_URL})`,
-				fn: () => b.ai.set_llm_base_url(llmUrl.trim() || DEFAULT_LLM_BASE_URL)
-			}
+			{ label: 'data.set_audit_canister(audit)', fn: () => b.data.set_audit_canister(audit) }
 		];
+
+		// AI disabled bundle-wide (see lib/features.ts): skip ai_assistant wiring.
+		const ai = b.ai;
+		if (AI_ENABLED && ai) {
+			steps.push(
+				{ label: 'ai_assistant.set_data_canister(data)', fn: () => ai.set_data_canister(data) },
+				{
+					label: 'ai_assistant.set_audit_canister(audit)',
+					fn: () => ai.set_audit_canister(audit)
+				},
+				{
+					label: `ai_assistant.set_llm_base_url(${llmUrl.trim() || DEFAULT_LLM_BASE_URL})`,
+					fn: () => ai.set_llm_base_url(llmUrl.trim() || DEFAULT_LLM_BASE_URL)
+				}
+			);
+		}
 
 		manualLog = [];
 		runningManual = true;
@@ -183,12 +190,12 @@
 	}
 
 	async function saveLlmUrl() {
-		const b = auth.state.backends;
-		if (!b) return;
+		const ai = auth.state.backends?.ai;
+		if (!ai) return;
 		llmSaveDetail = null;
 		savingLlm = true;
 		try {
-			const r = await b.ai.set_llm_base_url(llmUrl.trim());
+			const r = await ai.set_llm_base_url(llmUrl.trim());
 			if ('Err' in r) {
 				llmSaveDetail = appErrorMessage(r.Err);
 			} else {
@@ -273,43 +280,45 @@
 			{/if}
 		</div>
 
-		<div class="surface space-y-3 rounded p-6">
-			<h2 class="font-serif text-lg font-black">LLM endpoint</h2>
-			<p class="ink-muted text-sm">
-				Base URL of the on-engine GPU node serving <code>POST /v1/agent/run</code>.
-				The canister appends the path itself. Picked up automatically from the
-				<code>PUBLIC_LLM_BASE_URL</code> env var at install time; rotate at runtime here
-				(controllers only).
-			</p>
-			<input
-				type="text"
-				bind:value={llmUrl}
-				placeholder="https://[2602:fb2b:100:101:50bf:a8ff:fe92:6cdd]:11500"
-				class="rule-line surface w-full rounded border px-3 py-2 font-mono text-xs"
-			/>
-			<div class="flex items-center gap-3">
-				<button
-					type="button"
-					onclick={saveLlmUrl}
-					disabled={savingLlm || !llmUrl.trim()}
-					class="rounded px-4 py-2 text-sm font-bold text-[var(--color-paper)] disabled:opacity-50"
-					style="background: var(--color-burgundy);"
-				>
-					{savingLlm ? 'Saving…' : 'Save LLM endpoint'}
-				</button>
-				{#if llmSaveDetail}
-					<span class="ink-muted text-xs">{llmSaveDetail}</span>
-				{/if}
+		{#if AI_ENABLED}
+			<div class="surface space-y-3 rounded p-6">
+				<h2 class="font-serif text-lg font-black">LLM endpoint</h2>
+				<p class="ink-muted text-sm">
+					Base URL of the on-engine GPU node serving <code>POST /v1/agent/run</code>.
+					The canister appends the path itself. Picked up automatically from the
+					<code>PUBLIC_LLM_BASE_URL</code> env var at install time; rotate at runtime here
+					(controllers only).
+				</p>
+				<input
+					type="text"
+					bind:value={llmUrl}
+					placeholder="https://[2602:fb2b:100:101:50bf:a8ff:fe92:6cdd]:11500"
+					class="rule-line surface w-full rounded border px-3 py-2 font-mono text-xs"
+				/>
+				<div class="flex items-center gap-3">
+					<button
+						type="button"
+						onclick={saveLlmUrl}
+						disabled={savingLlm || !llmUrl.trim()}
+						class="rounded px-4 py-2 text-sm font-bold text-[var(--color-paper)] disabled:opacity-50"
+						style="background: var(--color-burgundy);"
+					>
+						{savingLlm ? 'Saving…' : 'Save LLM endpoint'}
+					</button>
+					{#if llmSaveDetail}
+						<span class="ink-muted text-xs">{llmSaveDetail}</span>
+					{/if}
+				</div>
 			</div>
-		</div>
+		{/if}
 
 		{#if !allOk}
 			<div class="surface space-y-3 rounded p-6">
 				<h2 class="font-serif text-lg font-black">Manual fallback</h2>
 				<p class="ink-muted text-sm">
-					Issues 7 setter calls in sequence (inter-canister wiring +
-					<code>ai_assistant.set_llm_base_url</code> using the URL from the LLM endpoint
-					section above). Use when the wiring status above shows red — typical after a
+					Issues the inter-canister wiring setter calls in sequence{AI_ENABLED
+						? ' (plus the ai_assistant LLM endpoint)'
+						: ''}. Use when the wiring status above shows red — typical after a
 					local <code>icp deploy</code>, which doesn't read the marketplace manifest.
 				</p>
 				<button

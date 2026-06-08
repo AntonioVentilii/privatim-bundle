@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
+	import { AI_ENABLED } from '$lib/features';
 	import { appErrorMessage } from '$lib/audit';
 	import {
 		formatChf,
@@ -243,12 +244,14 @@
 		>
 			Documents (encrypted) →
 		</a>
-		<a
-			href={`/assistant?client=${client.id}`}
-			class="rounded px-4 py-2 text-sm font-bold text-[var(--color-paper)]"
-			style="background: var(--color-burgundy);"
-		>
-			Ask the assistant about this client →
-		</a>
+		{#if AI_ENABLED}
+			<a
+				href={`/assistant?client=${client.id}`}
+				class="rounded px-4 py-2 text-sm font-bold text-[var(--color-paper)]"
+				style="background: var(--color-burgundy);"
+			>
+				Ask the assistant about this client →
+			</a>
+		{/if}
 	</div>
 {/if}

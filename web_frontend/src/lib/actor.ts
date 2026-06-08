@@ -16,6 +16,7 @@ import {
 	getDocumentsId,
 	getIdentityId
 } from './ic-env';
+import { AI_ENABLED } from './features';
 
 async function buildAgent(identity?: Identity): Promise<HttpAgent> {
 	const agent = await HttpAgent.create({
@@ -33,12 +34,15 @@ export interface Backends {
 	audit: AuditService;
 	data: DataService;
 	documents: DocumentsService;
-	ai: AiAssistantService;
+	// Only wired when AI is enabled (see lib/features.ts). The ai_assistant
+	// canister isn't shipped as a node while AI is disabled, so consumers must
+	// guard on `backends.ai` before calling it.
+	ai?: AiAssistantService;
 }
 
 export async function buildBackends(identity?: Identity): Promise<Backends> {
 	const agent = await buildAgent(identity);
-	return {
+	const backends: Backends = {
 		identity: Actor.createActor<IdentityService>(identityIdl, {
 			agent,
 			canisterId: getIdentityId()
@@ -54,10 +58,13 @@ export async function buildBackends(identity?: Identity): Promise<Backends> {
 		documents: Actor.createActor<DocumentsService>(documentsIdl, {
 			agent,
 			canisterId: getDocumentsId()
-		}),
-		ai: Actor.createActor<AiAssistantService>(aiIdl, {
-			agent,
-			canisterId: getAiAssistantId()
 		})
 	};
+	if (AI_ENABLED) {
+		backends.ai = Actor.createActor<AiAssistantService>(aiIdl, {
+			agent,
+			canisterId: getAiAssistantId()
+		});
+	}
+	return backends;
 }

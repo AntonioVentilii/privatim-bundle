@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
+	import { AI_ENABLED } from '$lib/features';
 	import { appErrorMessage } from '$lib/audit';
 	import { formatDateTime } from '$lib/format';
 	import type {
@@ -40,6 +41,7 @@
 	let traceLines = $state<string[]>([]);
 
 	$effect(() => {
+		if (!AI_ENABLED) return;
 		void auth.state.principal;
 		if (!auth.state.backends || !auth.state.authenticated) return;
 		auth.state.backends.data.list_clients().then((cs) => (clients = cs));
@@ -141,11 +143,29 @@
 	}
 </script>
 
-<section class="mx-auto max-w-4xl space-y-6">
-	<header class="space-y-2">
-		<div
-			class="ink-muted inline-flex items-center gap-2 text-[11px] tracking-[0.18em] uppercase"
-		>
+{#if !AI_ENABLED}
+	<section class="mx-auto max-w-4xl">
+		<div class="surface rounded p-8 text-center">
+			<h1 class="font-serif text-2xl font-black tracking-tight">Assistant unavailable</h1>
+			<p class="ink-muted mx-auto mt-2 max-w-md text-sm">
+				The AI assistant is temporarily disabled. Everything else in your workspace —
+				clients, documents, and the audit log — works as usual.
+			</p>
+			<a
+				href="/"
+				class="mt-4 inline-block rounded px-4 py-2 text-sm font-bold text-[var(--color-paper)]"
+				style="background: var(--color-burgundy);"
+			>
+				Back to overview
+			</a>
+		</div>
+	</section>
+{:else}
+	<section class="mx-auto max-w-4xl space-y-6">
+		<header class="space-y-2">
+			<div
+				class="ink-muted inline-flex items-center gap-2 text-[11px] tracking-[0.18em] uppercase"
+			>
 			<span class="size-1.5 rounded-full" style="background: var(--color-copper);"></span>
 			Stub LLM · production runs on this engine's GPU node
 		</div>
@@ -271,6 +291,7 @@
 		</article>
 	{/if}
 </section>
+{/if}
 
 <style>
 	:global(.cite) {
