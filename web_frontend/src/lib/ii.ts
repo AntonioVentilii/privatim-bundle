@@ -1,26 +1,13 @@
-import { getIiCanisterId } from './ic-env';
-
-// Mainnet HTTP gateways. In production the app is served from a canister
-// subdomain on one of these (e.g. abc-….icp0.io); sign-in must go to
-// https://id.ai, since Internet Identity passkeys are scoped to the id.ai
-// origin and would not resolve against a canister-origin II URL. Only local
-// replicas (…localhost) and dev farms (…farm.dfinity.systems) derive a
-// per-gateway II URL from the window.
-const MAINNET_GATEWAYS = ['icp0.io', 'ic0.app'];
-
-function deriveIiUrlFromWindow(iiCanisterId: string): string | null {
-	if (typeof window === 'undefined' || !iiCanisterId) return null;
-	const { protocol, hostname, port } = window.location;
-	const firstDot = hostname.indexOf('.');
-	if (firstDot <= 0) return null;
-	const firstLabel = hostname.slice(0, firstDot);
-	const rest = hostname.slice(firstDot + 1);
-	if (!/^[a-z0-9-]+$/i.test(firstLabel) || !firstLabel.includes('-')) return null;
-	if (MAINNET_GATEWAYS.some((g) => rest === g || rest.endsWith(`.${g}`))) return null;
-	const portPart = port ? `:${port}` : '';
-	return `${protocol}//${iiCanisterId}.${rest}${portPart}`;
-}
-
+// Internet Identity is always resolved to the hosted id.ai, in both local dev
+// and production. Since icp-cli 0.2.4 the local replica trusts mainnet subnet
+// signatures, so a delegation issued by the real id.ai is accepted locally too
+// — no local II canister needed. @dfinity/auth-client appends `#authorize`.
+//
+// The previous approach derived a per-gateway II URL by swapping the canister-id
+// subdomain of window.location for an II canister id. On any gateway that wasn't
+// icp0.io/ic0.app it produced a canister-origin II URL built from a *testnet* II
+// canister, where users' id.ai-scoped passkeys don't resolve. Hardcoding id.ai
+// removes that class of bug entirely.
 export function getIdentityProviderUrl(): string {
-	return deriveIiUrlFromWindow(getIiCanisterId()) || 'https://id.ai';
+	return 'https://id.ai';
 }
