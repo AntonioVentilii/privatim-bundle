@@ -2,7 +2,7 @@
 	"manifest_version": 1,
 	"name": "Privatim",
 	"short_name": "Sovereign private banking",
-	"application_version": "1.0.4",
+	"application_version": "1.0.5",
 	"description": "Auditable private-banking workspace.",
 	"main_canister": "web_frontend",
 
